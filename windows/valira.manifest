@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Elevation manifest.
+
+  Every path this client can take to a working tunnel is privileged: creating a
+  tunnel interface, rewriting the routing table, pointing the resolver somewhere
+  else. Asking for those rights up front is honest about what the program is,
+  and it means the tunnel cannot fail halfway through for want of them.
+
+  requireAdministrator, not highestAvailable: on a standard account the program
+  has nothing to offer, so it should say so at launch rather than after a sign-in.
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity
+      type="win32"
+      name="com.ValiraVPN.valira"
+      version="0.1.0.0"
+      processorArchitecture="*"/>
+
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+</assembly>

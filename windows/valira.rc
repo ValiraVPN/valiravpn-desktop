@@ -1,0 +1,12 @@
+// Resource script for the Windows build.
+//
+// 1 is CREATEPROCESS_MANIFEST_RESOURCE_ID, the manifest the loader reads for an
+// executable; 24 is RT_MANIFEST. Spelled numerically so the resource compiler
+// needs no SDK headers.
+1 24 "valira.manifest"
+
+// The application icon: taskbar, Alt-Tab, Explorer, and the window itself.
+// Explorer shows the lowest-numbered ICON resource, so this one is 1. Icon and
+// manifest can share the id — resource types have their own number spaces.
+// Built from ui/assets/logo.svg at 16 through 256 pixels.
+1 ICON "valira.ico"

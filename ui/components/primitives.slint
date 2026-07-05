@@ -1,0 +1,953 @@
+import { Theme } from "../theme.slint";
+import { Glyph, Icon } from "glyphs.slint";
+
+// One row of the exit list, of either kind: a country that folds open, or one
+// of the nodes underneath it. A single flat model keeps the whole thing inside
+// one ListView.
+export struct ExitEntry {
+    header: bool,
+    collapsed: bool,
+    id: int,          // the exit, or -1 on a country
+    code: string,     // ISO 3166-1 alpha-2
+    label: string,    // the country's name, or the node's city
+    moniker: string,
+    ready: bool,
+    kind: int,        // NodeKind: which line the node leaves by
+    asn: string,
+    count: int,       // nodes under a country
+    ready-count: int,
+    flag: image,
+    // False when the service sent something the flag set does not know. The row
+    // then shows the raw value rather than an empty box, so a country nobody
+    // anticipated is visible instead of silently blank.
+    has-flag: bool,
+}
+
+// Thin rectangular white scrollbar. Snaps to whole rows, like the list itself.
+export component WhiteScrollbar inherits Rectangle {
+    in property <length> viewport-height;
+    in property <length> visible-height;
+    in-out property <length> viewport-y;
+    in property <length> row-h: Theme.row-height;
+    property <length> maximum: max(0px, root.viewport-height - root.visible-height);
+    property <length> thumb-h: root.maximum <= 0px ? 0px : max(Theme.section-label-height, root.height * (root.visible-height / root.viewport-height));
+    property <length> free: max(0px, root.height - root.thumb-h);
+    width: 10px;
+    visible: root.maximum > 0px;
+    Rectangle {
+        width: 6px;
+        x: parent.width - self.width - 2px;
+        y: root.free > 0px ? root.free * (-root.viewport-y / root.maximum) : 0px;
+        height: root.thumb-h;
+        background: ta.pressed ? Theme.highlight-pressed : Theme.highlight;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        property <length> sy;
+        property <length> sval;
+        property <length> smax;
+        property <length> raw;
+        pointer-event(e) => {
+            if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) {
+                self.sy = self.mouse-y;
+                self.sval = -root.viewport-y;
+                self.smax = root.maximum;
+            }
+        }
+        moved => {
+            if (self.pressed && root.maximum > 0px && root.free > 0px) {
+                if (self.smax != root.maximum) {
+                    self.sy = self.mouse-y;
+                    self.sval = -root.viewport-y;
+                    self.smax = root.maximum;
+                }
+                self.raw = clamp(self.sval + (self.mouse-y - self.sy) * (root.maximum / root.free), 0px, root.maximum);
+                root.viewport-y = -(self.raw > floor(root.maximum / root.row-h) * root.row-h ? root.maximum : round(self.raw / root.row-h) * root.row-h);
+            }
+        }
+        scroll-event(e) => {
+            if (e.delta-y < 0) {
+                root.viewport-y = -min(root.maximum, (floor((-root.viewport-y) / root.row-h) + 1) * root.row-h);
+                return accept;
+            }
+            if (e.delta-y > 0) {
+                root.viewport-y = -max(0px, (ceil((-root.viewport-y) / root.row-h) - 1) * root.row-h);
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+// Indeterminate progress band. Same 4px white-on-#ffffff26 language as the
+// determinate loading bars, used wherever a request has no measurable progress.
+export component BusyBar inherits Rectangle {
+    in property <bool> running: true;
+    property <float> t: 0;
+
+    height: Theme.loading-progress-height;
+    background: #ffffff26;
+    clip: true;
+
+    Rectangle {
+        y: 0;
+        height: 100%;
+        width: parent.width * 0.35;
+        x: (parent.width * 1.35) * root.t - parent.width * 0.35;
+        background: Theme.highlight;
+    }
+
+    Timer {
+        interval: 16ms;
+        running: root.running;
+        triggered => {
+            root.t = root.t >= 1.0 ? 0.0 : root.t + 0.012;
+        }
+    }
+}
+
+// Full-width authentication action.
+export component AuthButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary;
+    in property <bool> enabled: true;
+    in property <length> btn-width: 260px;
+    callback clicked();
+
+    width: root.btn-width;
+    height: Theme.guilds-rail-width;
+    background: !root.enabled ? #ffffff0d : (ta.pressed ? Theme.highlight-pressed : (ta.has-hover ? Theme.highlight : (root.primary ? #ffffff14 : #000000a6)));
+    border-width: root.enabled ? 1px : 0px;
+    border-color: Theme.highlight;
+    Text {
+        text: root.label;
+        color: !root.enabled ? Theme.text-muted : ((ta.has-hover || ta.pressed) ? #000000 : Theme.text-primary);
+        font-size: Theme.font-sm;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%;
+        height: 100%;
+        overflow: elide;
+    }
+    ta := TouchArea {
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        accessible-role: button;
+        accessible-label: root.label;
+        accessible-action-default => { if (root.enabled) { root.clicked(); } }
+        clicked => { if (root.enabled) { root.clicked(); } }
+    }
+}
+
+// Square action used by header buttons and inline row icons.
+export component SquareActionButton inherits Rectangle {
+    in property <string> label;
+    in property <string> a11y-label: "";
+    // Zero means the button carries text instead. Drawn symbols replaced the
+    // Windows icon font, which rendered nothing at all on any other platform.
+    in property <int> icon: 0;
+    in property <length> label-size: Theme.font-lg;
+    callback clicked <=> ta.clicked;
+    width: Theme.guilds-rail-width;
+    height: Theme.guilds-rail-width;
+    background: ta.pressed ? Theme.surface-pressed : (ta.has-hover ? Theme.surface-hover : transparent);
+    if root.icon != 0: Glyph {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        kind: root.icon;
+        size: 17px;
+        ink: (ta.has-hover || ta.pressed) ? Theme.highlight : Theme.text-muted;
+    }
+    if root.icon == 0: Text {
+        text: root.label;
+        font-family: Theme.font-family;
+        color: (ta.has-hover || ta.pressed) ? Theme.highlight : Theme.text-muted;
+        font-size: root.label-size;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%;
+        height: 100%;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        accessible-role: button;
+        accessible-label: root.a11y-label != "" ? root.a11y-label : root.label;
+        accessible-action-default => { root.clicked(); }
+    }
+}
+
+// Text action with subtle hover and pressed feedback.
+export component SubtleActionButton inherits Rectangle {
+    in property <string> label;
+    in property <length> button-width: 88px;
+    in property <color> idle-color: Theme.text-muted;
+    callback clicked <=> ta.clicked;
+    width: root.button-width;
+    height: Theme.guilds-rail-width;
+    background: ta.pressed ? Theme.surface-pressed : (ta.has-hover ? Theme.surface-hover : transparent);
+    Text {
+        text: root.label;
+        color: (ta.has-hover || ta.pressed) ? Theme.highlight : root.idle-color;
+        font-size: Theme.font-sm;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%;
+        height: 100%;
+        overflow: elide;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        accessible-role: button;
+        accessible-label: root.label;
+        accessible-action-default => { root.clicked(); }
+    }
+}
+
+// Footer and dialog action. Primary fills white, secondary is outlined.
+export component DialogActionButton inherits Rectangle {
+    in property <string> label;
+    in property <length> button-width: 132px;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    in property <bool> enabled: true;
+    callback clicked();
+    width: root.button-width;
+    height: Theme.guilds-rail-width;
+    background: !root.enabled ? #ffffff0d : (root.primary ? (ta.pressed ? Theme.highlight-pressed : Theme.highlight) : (ta.pressed ? Theme.highlight-pressed : (ta.has-hover ? Theme.highlight : transparent)));
+    border-width: root.primary || !root.enabled ? 0px : 1px;
+    border-color: root.danger ? Theme.danger : Theme.border;
+    Text {
+        text: root.label;
+        color: !root.enabled ? Theme.text-muted : (root.primary ? #000000 : ((ta.has-hover || ta.pressed) ? #000000 : (root.danger ? Theme.danger : Theme.text-secondary)));
+        font-size: Theme.font-sm;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%;
+        height: 100%;
+        overflow: elide;
+    }
+    ta := TouchArea {
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        accessible-role: button;
+        accessible-label: root.label;
+        accessible-action-default => { if (root.enabled) { root.clicked(); } }
+        clicked => { if (root.enabled) { root.clicked(); } }
+    }
+}
+
+// Single-line input. Never a std-widget: the placeholder is a plain Text laid
+// over the caret so nothing about the field comes from the platform style.
+export component TextField inherits Rectangle {
+    in property <string> placeholder;
+    in-out property <string> text <=> input.text;
+    in property <bool> enabled: true;
+    in property <bool> flat: false;
+    in property <length> inset: 14px;
+    callback accepted(string);
+    callback edited(string);
+
+    height: Theme.guilds-rail-width;
+    background: root.flat ? transparent : #00000099;
+    border-width: root.flat ? 0px : 1px;
+    border-color: input.has-focus ? Theme.highlight : #ffffff33;
+
+    input := TextInput {
+        x: root.inset;
+        width: parent.width - 2 * root.inset;
+        height: 100%;
+        color: root.enabled ? Theme.text-primary : Theme.text-muted;
+        font-size: Theme.font-md;
+        vertical-alignment: center;
+        single-line: true;
+        read-only: !root.enabled;
+        selection-background-color: Theme.highlight;
+        selection-foreground-color: #000000;
+        accessible-label: root.placeholder;
+        accessible-placeholder-text: root.placeholder;
+        accepted => { root.accepted(self.text); }
+        edited => { root.edited(self.text); }
+        accessible-action-default => { root.accepted(self.text); }
+    }
+    Text {
+        x: root.inset;
+        width: parent.width - 2 * root.inset;
+        height: 100%;
+        text: root.placeholder;
+        color: Theme.text-muted;
+        font-size: Theme.font-md;
+        vertical-alignment: center;
+        overflow: elide;
+        visible: input.text == "";
+    }
+}
+
+// What kind of line a node leaves by. Mirrors KIND_* in api.rs, which is where
+// the numbers come from — Slint structs have no room for a Rust enum.
+export global NodeKind {
+    out property <int> unknown: 0;
+    out property <int> residential: 1;
+    out property <int> datacentre: 2;
+}
+
+// A house for a residential line, a rack for a datacentre, a plain disc when
+// the service did not say.
+//
+// `blip` draws them the way a game map does: solid black with a white outline,
+// which stays legible over land, over water and over a marker underneath it.
+// Without it they are flat single-colour glyphs, which is what chrome wants.
+export component NodeIcon inherits Rectangle {
+    in property <int> kind;
+    in property <length> size: 16px;
+    in property <bool> blip: false;
+    in property <color> ink: Theme.text-secondary;
+    // What sits behind the icon. The marks on the cabinet are painted in it, so
+    // they read as slots cut into the body rather than as a second solid shape.
+    in property <color> behind: Theme.bg-fallback;
+
+    property <color> body: root.blip ? #000000 : root.ink;
+    property <brush> edge: root.blip ? Theme.highlight : Colors.transparent;
+    property <length> edge-width: root.blip ? root.size / 9 : 0px;
+    property <color> detail: root.blip ? Theme.highlight : root.behind;
+
+    width: root.size;
+    height: root.size;
+
+    if root.kind == NodeKind.residential: Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        commands: "M 12 2.6 L 22.2 11.4 L 19 11.4 L 19 21.4 L 5 21.4 L 5 11.4 L 1.8 11.4 Z";
+        fill: root.body;
+        stroke: root.edge;
+        stroke-width: root.edge-width;
+    }
+
+    // One cabinet rather than the two stacked bars this started as. Each bar
+    // carried its own outline, and at fifteen pixels the two outlines met in
+    // the middle and left a white block with black slits in it — the opposite
+    // of the house beside it. Drawn as a single body, the middle stays black
+    // and the two slots are only marks on it.
+    if root.kind == NodeKind.datacentre: Rectangle {
+        width: 100%;
+        height: 100%;
+
+        Path {
+            width: 100%;
+            height: 100%;
+            viewbox-width: 24;
+            viewbox-height: 24;
+            commands: "M 3.4 3.2 L 20.6 3.2 L 20.6 20.8 L 3.4 20.8 Z";
+            fill: root.body;
+            stroke: root.edge;
+            stroke-width: root.edge-width;
+        }
+
+        Path {
+            width: 100%;
+            height: 100%;
+            viewbox-width: 24;
+            viewbox-height: 24;
+            commands: "M 6.8 8.0 L 17.2 8.0 L 17.2 9.6 L 6.8 9.6 Z "
+                    + "M 6.8 14.4 L 17.2 14.4 L 17.2 16.0 L 6.8 16.0 Z";
+            fill: root.detail;
+        }
+    }
+
+    if root.kind != NodeKind.residential && root.kind != NodeKind.datacentre: Rectangle {
+        width: root.size * 0.62;
+        height: root.size * 0.62;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: self.width / 2;
+        background: root.body;
+        border-width: root.edge-width;
+        border-color: root.edge;
+    }
+}
+
+// Which kinds the list and the map are showing. Three segments across the
+// pane, on the grid, selected in white with black ink like every other choice
+// in this design.
+export component KindTabs inherits Rectangle {
+    // -1 for everything, otherwise a NodeKind.
+    in property <int> chosen: -1;
+    in property <int> all-count;
+    in property <int> residential-count;
+    in property <int> datacentre-count;
+    callback picked(int);
+
+    height: Theme.row-height;
+    background: #00000099;
+
+    HorizontalLayout {
+        padding: 0;
+        spacing: 0;
+
+        tab-all := Rectangle {
+            property <bool> on: root.chosen == -1;
+            horizontal-stretch: 1;
+            background: self.on
+                ? Theme.highlight
+                : (ta-all.pressed ? Theme.surface-pressed : (ta-all.has-hover ? Theme.surface-hover : transparent));
+            HorizontalLayout {
+                alignment: center;
+                spacing: 7px;
+                Text {
+                    text: "All";
+                    color: tab-all.on ? #000000 : (ta-all.has-hover ? Theme.highlight : Theme.text-secondary);
+                    font-size: Theme.font-sm;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.all-count;
+                    color: tab-all.on ? #00000099 : Theme.text-muted;
+                    font-size: Theme.font-xs;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+            }
+            ta-all := TouchArea {
+                mouse-cursor: pointer;
+                accessible-role: button;
+                accessible-label: "Show every node";
+                accessible-action-default => { root.picked(-1); }
+                clicked => { root.picked(-1); }
+            }
+        }
+
+        Rectangle { width: 1px; background: Theme.border-subtle; }
+
+        tab-res := Rectangle {
+            property <bool> on: root.chosen == NodeKind.residential;
+            horizontal-stretch: 1;
+            background: self.on
+                ? Theme.highlight
+                : (ta-res.pressed ? Theme.surface-pressed : (ta-res.has-hover ? Theme.surface-hover : transparent));
+            HorizontalLayout {
+                alignment: center;
+                spacing: 7px;
+                VerticalLayout {
+                    alignment: center;
+                    NodeIcon {
+                        kind: NodeKind.residential;
+                        size: 14px;
+                        ink: tab-res.on ? #000000 : (ta-res.has-hover ? Theme.highlight : Theme.text-secondary);
+                    }
+                }
+                Text {
+                    text: "Residential";
+                    color: tab-res.on ? #000000 : (ta-res.has-hover ? Theme.highlight : Theme.text-secondary);
+                    font-size: Theme.font-sm;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.residential-count;
+                    color: tab-res.on ? #00000099 : Theme.text-muted;
+                    font-size: Theme.font-xs;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+            }
+            ta-res := TouchArea {
+                mouse-cursor: pointer;
+                accessible-role: button;
+                accessible-label: "Show residential nodes only";
+                accessible-action-default => { root.picked(NodeKind.residential); }
+                clicked => { root.picked(NodeKind.residential); }
+            }
+        }
+
+        Rectangle { width: 1px; background: Theme.border-subtle; }
+
+        tab-dc := Rectangle {
+            property <bool> on: root.chosen == NodeKind.datacentre;
+            horizontal-stretch: 1;
+            background: self.on
+                ? Theme.highlight
+                : (ta-dc.pressed ? Theme.surface-pressed : (ta-dc.has-hover ? Theme.surface-hover : transparent));
+            HorizontalLayout {
+                alignment: center;
+                spacing: 7px;
+                VerticalLayout {
+                    alignment: center;
+                    NodeIcon {
+                        kind: NodeKind.datacentre;
+                        size: 14px;
+                        ink: tab-dc.on ? #000000 : (ta-dc.has-hover ? Theme.highlight : Theme.text-secondary);
+                        behind: tab-dc.on ? Theme.highlight : Theme.bg-fallback;
+                    }
+                }
+                Text {
+                    text: "Datacenter";
+                    color: tab-dc.on ? #000000 : (ta-dc.has-hover ? Theme.highlight : Theme.text-secondary);
+                    font-size: Theme.font-sm;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.datacentre-count;
+                    color: tab-dc.on ? #00000099 : Theme.text-muted;
+                    font-size: Theme.font-xs;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+            }
+            ta-dc := TouchArea {
+                mouse-cursor: pointer;
+                accessible-role: button;
+                accessible-label: "Show datacentre nodes only";
+                accessible-action-default => { root.picked(NodeKind.datacentre); }
+                clicked => { root.picked(NodeKind.datacentre); }
+            }
+        }
+    }
+
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border-subtle;
+    }
+}
+
+// One entry of a dropdown. Full-width hover, like every other selectable row
+// in the design, rather than a floating highlight.
+export component MenuRow inherits Rectangle {
+    in property <string> label;
+    in property <int> icon;
+    in property <bool> danger: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    property <bool> lit: root.enabled && (ta.has-hover || ta.pressed);
+
+    height: Theme.row-height;
+    background: !root.enabled
+        ? transparent
+        : (ta.pressed ? Theme.surface-pressed : (ta.has-hover ? Theme.surface-hover : transparent));
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 10px;
+
+        VerticalLayout {
+            alignment: center;
+            Glyph {
+                kind: root.icon;
+                size: 16px;
+                ink: !root.enabled
+                    ? Theme.text-muted
+                    : (root.danger ? Theme.danger : (root.lit ? Theme.highlight : Theme.text-secondary));
+            }
+        }
+
+        Text {
+            text: root.label;
+            color: !root.enabled
+                ? Theme.text-muted
+                : (root.danger ? Theme.danger : (root.lit ? Theme.highlight : Theme.text-primary));
+            font-size: Theme.font-md;
+            font-weight: 600;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        accessible-role: button;
+        accessible-label: root.label;
+        accessible-action-default => { if (root.enabled) { root.clicked(); } }
+        clicked => { if (root.enabled) { root.clicked(); } }
+    }
+}
+
+// Label and value row on the 44px grid, with a hairline under it.
+export component FieldRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> strong: false;
+    in property <color> value-color: Theme.text-primary;
+
+    height: Theme.row-height;
+
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 12px;
+        Text {
+            text: root.label;
+            color: Theme.text-muted;
+            font-size: Theme.font-xs;
+            font-weight: 700;
+            vertical-alignment: center;
+            width: Theme.field-label-width;
+            overflow: elide;
+        }
+        Text {
+            text: root.value == "" ? "—" : root.value;
+            color: root.value == "" ? Theme.text-muted : root.value-color;
+            font-size: Theme.font-md;
+            font-weight: root.strong ? 700 : 400;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+    }
+
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border-subtle;
+    }
+}
+
+// One hop of the tunnel circuit, drawn with the connector line and dot.
+export component HopRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> first: false;
+    in property <bool> last: false;
+    in property <color> dot-color: Theme.text-secondary;
+
+    height: Theme.guilds-rail-width;
+    background: transparent;
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 12px;
+
+        Rectangle {
+            width: 16px;
+            height: Theme.guilds-rail-width;
+
+            if !root.first: Rectangle {
+                x: 7px;
+                y: 0px;
+                width: 2px;
+                height: parent.height / 2;
+                background: #ffffff40;
+            }
+
+            if !root.last: Rectangle {
+                x: 7px;
+                y: parent.height / 2;
+                width: 2px;
+                height: parent.height / 2;
+                background: #ffffff40;
+            }
+
+            Rectangle {
+                x: 4px;
+                y: (parent.height - self.height) / 2;
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: root.dot-color;
+            }
+        }
+
+        Text {
+            text: root.label;
+            color: Theme.text-muted;
+            font-size: Theme.font-xs;
+            font-weight: 700;
+            vertical-alignment: center;
+            width: 52px;
+        }
+
+        Text {
+            text: root.value == "" ? "—" : root.value;
+            color: Theme.text-secondary;
+            font-size: Theme.font-sm;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+// A country, folding open onto its nodes. The flag is a real image: Windows
+// draws no flag emoji, it draws the two letters instead.
+export component CountryRow inherits Rectangle {
+    in property <ExitEntry> entry;
+    in property <bool> holds-current: false;
+    callback toggled();
+    callback scroll-down();
+    callback scroll-up();
+
+    property <bool> lit: ta.has-hover || ta.pressed;
+
+    height: Theme.row-height;
+    background: ta.pressed ? Theme.surface-pressed : (ta.has-hover ? Theme.surface-hover : transparent);
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 10px;
+
+        Glyph {
+            kind: root.entry.collapsed ? Icon.chevron-right : Icon.chevron-down;
+            size: 13px;
+            ink: root.lit ? Theme.highlight : Theme.text-muted;
+            y: (parent.height - self.height) / 2;
+            width: 12px;
+        }
+
+        // A hairline keeps a white flag from bleeding into the panel.
+        Rectangle {
+            width: 24px;
+            Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: 24px;
+                height: 18px;
+                border-width: 1px;
+                border-color: Theme.border;
+
+                if root.entry.has-flag: Image {
+                    width: 100%;
+                    height: 100%;
+                    source: root.entry.flag;
+                    image-fit: fill;
+                }
+
+                // No flag for this one: show what the service actually sent.
+                if !root.entry.has-flag: Text {
+                    width: 100%;
+                    height: 100%;
+                    text: root.entry.code.to-uppercase();
+                    color: Theme.text-muted;
+                    font-size: 9px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+        }
+
+        Text {
+            text: root.entry.label;
+            color: root.lit ? Theme.highlight : Theme.text-primary;
+            font-size: Theme.font-md;
+            font-weight: 700;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        // The active exit lives in here, and the row is shut.
+        if root.holds-current && root.entry.collapsed: Rectangle {
+            width: 8px;
+            Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: Theme.highlight;
+            }
+        }
+
+        Rectangle { horizontal-stretch: 1; }
+
+        Text {
+            text: root.entry.count == 1 ? "1 node" : root.entry.count + " nodes";
+            color: Theme.text-muted;
+            font-size: Theme.font-xs;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border-subtle;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        accessible-role: button;
+        accessible-label: root.entry.label + ", " + root.entry.count + " nodes";
+        accessible-action-default => { root.toggled(); }
+        clicked => { root.toggled(); }
+        scroll-event(e) => {
+            if (e.delta-y < 0) {
+                root.scroll-down();
+                return accept;
+            }
+            if (e.delta-y > 0) {
+                root.scroll-up();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+// One node under a country. Indented so the grouping reads at a glance, and
+// carrying its moniker: that name is how a node is told from its neighbours.
+export component ExitRow inherits Rectangle {
+    in property <ExitEntry> entry;
+    in property <bool> current;
+    in property <bool> pending;
+    in property <bool> locked;
+    callback picked();
+    callback scroll-down();
+    callback scroll-up();
+
+    property <bool> lit: ta.has-hover || ta.pressed;
+
+    height: Theme.row-height;
+    background: root.current ? Theme.highlight : (ta.pressed ? Theme.surface-pressed : (ta.has-hover ? Theme.surface-hover : transparent));
+
+    HorizontalLayout {
+        padding-left: 36px;
+        padding-right: 14px;
+        spacing: 12px;
+
+        Rectangle {
+            width: 16px;
+            VerticalLayout {
+                alignment: center;
+                // The same house or cabinet the map draws, so a row and its
+                // marker are recognisably the same node. Its colour still
+                // carries the status: every listed exit is available, and
+                // `ready` only says the service has set this one up for us.
+                NodeIcon {
+                    kind: root.entry.kind;
+                    size: 15px;
+                    ink: root.current ? #000000 : (root.pending ? Theme.warning : Theme.success);
+                    behind: root.current ? Theme.highlight : Theme.bg-fallback;
+                }
+            }
+        }
+
+        Text {
+            text: root.entry.label;
+            color: root.current ? #000000 : (root.lit ? Theme.highlight : Theme.text-secondary);
+            font-size: Theme.font-md;
+            font-weight: root.current ? 700 : 400;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        Rectangle { horizontal-stretch: 1; }
+
+        // Capped, because some monikers run to forty characters and an
+        // uncapped one shortened "Ho Chi Minh City" to "H...". The city is
+        // what the choice is made on, so it elides last.
+        Text {
+            text: root.entry.moniker;
+            color: root.current ? #00000099 : Theme.text-muted;
+            font-size: Theme.font-xs;
+            vertical-alignment: center;
+            max-width: root.width * 0.42;
+            overflow: elide;
+        }
+
+        // Only the exit in service has anything to say here. Labelling the other
+        // six hundred "waiting" made an entirely healthy list look alarming.
+        Text {
+            text: root.pending
+                ? "ACTIVATING"
+                : (root.current ? (root.entry.ready ? "IN SERVICE" : "ACTIVATING") : "");
+            color: root.current && root.entry.ready && !root.pending ? #000000 : Theme.warning;
+            font-size: Theme.font-xs;
+            font-weight: 800;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            // Only the one row that speaks reserves the column. Holding 108px
+            // open on all six hundred others is what was truncating cities.
+            width: (root.pending || root.current) ? 108px : 0px;
+            overflow: elide;
+        }
+    }
+
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border-subtle;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: root.locked ? MouseCursor.default : MouseCursor.pointer;
+        accessible-role: button;
+        accessible-label: root.entry.label + " " + root.entry.moniker;
+        accessible-action-default => { if (!root.locked) { root.picked(); } }
+        clicked => { if (!root.locked) { root.picked(); } }
+        scroll-event(e) => {
+            if (e.delta-y < 0) {
+                root.scroll-down();
+                return accept;
+            }
+            if (e.delta-y > 0) {
+                root.scroll-up();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+// Bottom notice. Height is intrinsic so a long service error is never clipped.
+export component NoticeBar inherits Rectangle {
+    in property <string> text;
+    in property <bool> danger: true;
+    callback dismissed();
+
+    background: #000000bf;
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 0px;
+        spacing: 10px;
+
+        Rectangle {
+            width: 16px;
+            Glyph {
+                kind: root.danger ? Icon.warning : Icon.info;
+                size: 16px;
+                ink: root.danger ? Theme.danger : Theme.text-muted;
+                behind: Theme.bg-fallback;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: 100%;
+                height: 100%;
+            }
+        }
+
+        VerticalLayout {
+            padding-top: 13px;
+            padding-bottom: 13px;
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.text;
+                color: root.danger ? Theme.danger : Theme.text-secondary;
+                font-size: Theme.font-sm;
+                wrap: word-wrap;
+            }
+        }
+
+        SquareActionButton {
+            icon: Icon.close;
+            a11y-label: "Dismiss";
+            label-size: 14px;
+            clicked => { root.dismissed(); }
+        }
+    }
+
+    Rectangle {
+        y: 0;
+        height: 1px;
+        background: Theme.border-subtle;
+    }
+}

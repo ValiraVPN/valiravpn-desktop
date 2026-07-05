@@ -1,0 +1,84 @@
+// Valira design tokens, ported from Securo. The window is transparent with
+// native Windows acrylic blur when the GPU renderer is available; surfaces use
+// black at about 70 percent opacity over the blurred desktop. Without a GPU the
+// window turns opaque and the same surfaces sit on `bg-fallback` instead.
+// No border radius anywhere. The shape language is rectangular.
+
+export global Theme {
+    // Surfaces.
+    out property <color> bg-window: transparent;
+    out property <color> bg-fallback: #0b0d0f; // Opaque base when acrylic is unavailable.
+    out property <color> bg-titlebar: #000000b3;
+    out property <color> bg-sidebar: #000000b3;
+    out property <color> bg-content: #000000b3;
+    out property <color> surface: #000000b3;
+    out property <color> surface-hover: #ffffff1a;
+    out property <color> surface-active: #ffffff26;
+    out property <color> surface-pressed: #ffffff33;
+
+    // Borders.
+    out property <color> border: #ffffff26;
+    out property <color> border-subtle: #ffffff14;
+
+    // Text.
+    out property <color> text-primary: #f2f3f5;
+    out property <color> text-secondary: #c2c6cc;
+    out property <color> text-muted: #8a909a;
+
+    // Accent.
+    out property <color> accent: #5ea8ff;
+    out property <color> highlight: #ffffff; // Selection highlight.
+    out property <color> highlight-pressed: #d9d9d9;
+
+    // Status.
+    out property <color> danger: #e5484d;
+    out property <color> success: #46c08a;
+    out property <color> warning: #e3a008;
+
+    // Geometry. One row is the base unit.
+    out property <length> titlebar-height: 44px;
+    // The mark, a gap, and "ValiraVPN". Mirrored by TITLEBAR_BRAND_W in
+    // win32_frame.rs, which decides where the drag band ends.
+    out property <length> titlebar-brand-width: 128px;
+    out property <length> guilds-rail-width: 44px;
+    out property <length> channels-width: 240px;
+    out property <length> members-width: 216px;
+    out property <length> header-height: 44px;
+    out property <length> row-height: 44px;
+    out property <length> section-label-height: 22px; // Half row for non-clickable labels only.
+    out property <length> progress-height: 11px; // Quarter row for thin bands and spacers.
+    out property <length> loading-progress-height: 4px;
+    out property <length> seed-word-height: 33px; // Three-quarter row.
+
+    // Valira additions, same 44px grid.
+    out property <length> tunnel-status-width: 196px;
+    out property <length> field-label-width: 116px;
+    out property <length> footer-height: 56px;
+    out property <length> menu-width: 360px;
+    out property <length> sign-in-column-width: 340px;
+
+    // Two-pane layout. Below the breakpoint the map is dropped and the list
+    // takes the whole window. The pane is wide enough that no city name and no
+    // account line ever elides; the breakpoint then leaves the map its own half.
+    out property <length> wide-breakpoint: 880px; // 20 rows
+    out property <length> list-pane-width: 420px;
+
+    // Map. Land is translucent on purpose: the window behind it is part of
+    // the design, so the map sits on the acrylic rather than hiding it.
+    // `MAP_LAND` and `MAP_BORDER` in main.rs carry the same two values.
+    // The pane carries its own backdrop, lighter than the other surfaces, so
+    // the blur behind it stays legible through both it and the land above.
+    out property <color> map-backdrop: #00000059;
+    out property <color> map-land: #2b313a8a;
+    out property <color> map-border: #7d8798a8;
+    out property <color> map-link: #ffffff59;
+
+    // Typography.
+    out property <string> font-family: "Inter";
+    out property <length> font-xs: 11px;
+    out property <length> font-sm: 12px;
+    out property <length> font-md: 13px;
+    out property <length> font-lg: 15px;
+    out property <length> font-xl: 18px;
+    out property <length> font-2xl: 22px;
+}

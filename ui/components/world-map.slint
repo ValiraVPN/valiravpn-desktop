@@ -1,0 +1,416 @@
+import { Theme } from "../theme.slint";
+import { SquareActionButton, NodeIcon, NodeKind } from "primitives.slint";
+import { Icon } from "glyphs.slint";
+
+// One clickable location. Several exits in the same city collapse into a single
+// node, so `count` says how many sit underneath and `id` is the one a click
+// picks — the ready one, when there is a choice.
+export struct MapNode {
+    id: int,
+    label: string,
+    detail: string,
+    nx: float,
+    ny: float,
+    ready: bool,
+    kind: int,        // NodeKind: which line the node leaves by
+    count: int,
+}
+
+// One dot of the entry-to-exit trail. Interpolated on the Rust side so the
+// spacing stays even whatever the pane size.
+export struct MapDot {
+    nx: float,
+    ny: float,
+}
+
+export component WorldMap inherits Rectangle {
+    in property <[MapNode]> nodes;
+    in property <[MapDot]> link;
+    in property <int> current-node: -1;
+    in property <int> pending-node: -1;
+    in property <bool> locked: false;
+    in property <bool> has-relay: false;
+    in property <float> relay-nx;
+    in property <float> relay-ny;
+    in property <string> relay-label;
+    in property <int> unplaced: 0;
+    // The land, filled by src/worldmap.rs for the window below.
+    in property <image> canvas-image;
+    // The window `canvas-image` was actually drawn for. While a gesture is
+    // running it lags behind the live view, and the image is scaled and shifted
+    // to bridge the gap — see where it is drawn.
+    in property <float> image-view-x;
+    in property <float> image-view-y;
+    in property <float> image-view-w: 1;
+    in property <float> image-view-h: 1;
+    callback picked(int);
+    callback view-changed(float, float, float, float, length, length);
+    callback view-settled(float, float, float, float, length, length);
+    callback zoom-changed(float);
+
+    // Must match worldmap::ASPECT: the full 360 degrees of longitude over
+    // the +83..-56 band the coastlines were cut to.
+    property <float> map-aspect: 360.0 / 139.0;
+    // The coastlines are vector, so the outline stays exact however far in the
+    // view goes; this is only where a world map stops being useful.
+    property <float> min-view-w: 0.02;
+
+    // Visible window, in the same 0..1 space the markers use.
+    property <float> view-x: 0;
+    property <float> view-y: 0;
+    property <float> view-w: 1;
+    property <float> view-h: canvas.width > 1px
+        ? root.view-w * root.map-aspect * (canvas.height / canvas.width)
+        : root.view-w / root.map-aspect;
+
+    // Scratch for zoom-to, which has to read the anchor before it moves.
+    property <float> anchor-wx;
+    property <float> anchor-wy;
+
+    property <bool> primed: false;
+    // Set by every gesture step, cleared once the view has held still long
+    // enough to be worth redrawing.
+    property <bool> settling: false;
+    property <int> hovered: -1;
+    property <string> hover-label;
+    property <string> hover-detail;
+
+    // Asked on every step of every gesture. The land is held in a texture drawn
+    // wider than the pane, so as long as the view stays within it this costs
+    // nothing and the map simply moves. Leaving it draws a quick replacement;
+    // the clean one comes when the gesture ends.
+    function notify() {
+        root.view-changed(root.view-x, root.view-y, root.view-w, root.view-h, canvas.width, canvas.height);
+        root.settling = true;
+        settle-timer.restart();
+    }
+
+    function redraw-now() {
+        root.settling = false;
+        settle-timer.stop();
+        root.view-settled(root.view-x, root.view-y, root.view-w, root.view-h, canvas.width, canvas.height);
+        root.zoom-changed(1.0 / root.view-w);
+    }
+
+    settle-timer := Timer {
+        interval: 70ms;
+        running: root.settling;
+        triggered => { root.redraw-now(); }
+    }
+
+    // Keeps the map inside the pane without ever forcing a position: re-centring
+    // on every step used to shift the ground under the cursor between two wheel
+    // notches, so a zoom aimed at Paris walked off to the Sahara.
+    function settle() {
+        root.view-x = clamp(root.view-x, 0.0, max(0.0, 1.0 - root.view-w));
+        root.view-y = root.view-h >= 1.0
+            ? clamp(root.view-y, 1.0 - root.view-h, 0.0)
+            : clamp(root.view-y, 0.0, 1.0 - root.view-h);
+        root.notify();
+    }
+
+    // A pane taller than the map has slack above and below. Centre it, but only
+    // when there is no gesture to respect: on a resize, or on a reset.
+    function recentre() {
+        if (root.view-h >= 1.0) {
+            root.view-y = (1.0 - root.view-h) / 2;
+        }
+        root.settle();
+    }
+
+    // Keeps the point under the cursor still while the scale changes.
+    function zoom-to(target: float, ax: float, ay: float) {
+        root.anchor-wx = root.view-x + ax * root.view-w;
+        root.anchor-wy = root.view-y + ay * root.view-h;
+        root.view-w = clamp(target, root.min-view-w, 1.0);
+        root.view-x = root.anchor-wx - ax * root.view-w;
+        root.view-y = root.anchor-wy - ay * root.view-h;
+        root.settle();
+    }
+
+    public function reset-view() {
+        root.view-w = 1.0;
+        root.view-x = 0.0;
+        root.view-y = 0.0;
+        root.recentre();
+    }
+
+    background: Theme.map-backdrop;
+    clip: true;
+
+    VerticalLayout {
+        spacing: 0;
+
+        canvas := Rectangle {
+            vertical-stretch: 1;
+            clip: true;
+
+            changed width => { root.recentre(); }
+            changed height => { root.recentre(); }
+
+            // `changed` reports later changes, not the first layout — and this
+            // pane is only built once the window is wide enough, so its opening
+            // size is never a change and the map would stay blank until someone
+            // resized. Ask once, as soon as there is a size to ask about.
+            Timer {
+                interval: 40ms;
+                running: !root.primed;
+                triggered => {
+                    if (canvas.width > 1px) {
+                        root.primed = true;
+                        root.recentre();
+                    }
+                }
+            }
+
+            // Placed by the window it was drawn for against the window on
+            // show. The two are equal whenever the map is at rest, so this is
+            // an identity fill except during a gesture.
+            Image {
+                x: canvas.width * (root.image-view-x - root.view-x) / root.view-w;
+                y: canvas.height * (root.image-view-y - root.view-y) / root.view-h;
+                width: canvas.width * root.image-view-w / root.view-w;
+                height: canvas.height * root.image-view-h / root.view-h;
+                source: root.canvas-image;
+                image-fit: fill;
+            }
+
+            // Under the markers, so a marker still takes the click.
+            pan := TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: self.pressed ? MouseCursor.grabbing : MouseCursor.grab;
+                property <float> from-x;
+                property <float> from-y;
+                property <length> grab-x;
+                property <length> grab-y;
+
+                pointer-event(e) => {
+                    if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) {
+                        self.from-x = root.view-x;
+                        self.from-y = root.view-y;
+                        self.grab-x = self.mouse-x;
+                        self.grab-y = self.mouse-y;
+                    }
+                }
+                moved => {
+                    if (self.pressed) {
+                        root.view-x = self.from-x - (self.mouse-x - self.grab-x) / canvas.width * root.view-w;
+                        root.view-y = self.from-y - (self.mouse-y - self.grab-y) / canvas.height * root.view-h;
+                        root.settle();
+                    }
+                }
+                scroll-event(e) => {
+                    if (e.delta-y != 0) {
+                        root.zoom-to(
+                            root.view-w * (e.delta-y > 0 ? 1.0 / 1.25 : 1.25),
+                            self.mouse-x / canvas.width,
+                            self.mouse-y / canvas.height);
+                        return accept;
+                    }
+                    return reject;
+                }
+            }
+
+            // Entry to exit trail, drawn under the markers.
+            for dot in root.link: Rectangle {
+                x: canvas.width * (dot.nx - root.view-x) / root.view-w - 1.5px;
+                y: canvas.height * (dot.ny - root.view-y) / root.view-h - 1.5px;
+                width: 3px;
+                height: 3px;
+                border-radius: 1.5px;
+                background: Theme.map-link;
+            }
+
+            // Entry node: hollow, so it never reads as a selectable exit.
+            if root.has-relay: Rectangle {
+                x: canvas.width * (root.relay-nx - root.view-x) / root.view-w - 6px;
+                y: canvas.height * (root.relay-ny - root.view-y) / root.view-h - 6px;
+                width: 12px;
+                height: 12px;
+                border-radius: 6px;
+                background: transparent;
+                border-width: 2px;
+                border-color: Theme.text-secondary;
+            }
+
+            for node in root.nodes: marker := Rectangle {
+                // Zero-sized anchor: everything hangs off the exact spot.
+                x: canvas.width * (node.nx - root.view-x) / root.view-w;
+                y: canvas.height * (node.ny - root.view-y) / root.view-h;
+                width: 0px;
+                height: 0px;
+
+                property <bool> current: node.id == root.current-node;
+                property <bool> pending: node.id == root.pending-node;
+                property <bool> lit: ta.has-hover;
+                property <length> size: (self.current || self.lit) ? 20px : 15px;
+
+                if marker.current: Rectangle {
+                    x: -16px;
+                    y: -16px;
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 16px;
+                    background: transparent;
+                    border-width: 1px;
+                    border-color: #ffffff4d;
+                }
+
+                // A blip, the way a game map marks a place: solid black under
+                // a white outline, so it reads over land, over water, and over
+                // another marker. The one being activated goes amber; the one
+                // in service is told apart by its ring and its size.
+                // The silhouette never changes, only where it sits, so it is
+                // rasterised once and moved as a picture. Re-tessellating two
+                // vector paths per marker on every frame of a drag is what made
+                // the map heavy the moment these replaced the plain dots.
+                if !marker.pending: NodeIcon {
+                    x: -marker.size / 2;
+                    y: -marker.size / 2;
+                    kind: node.kind;
+                    size: marker.size;
+                    blip: true;
+                    cache-rendering-hint: true;
+                }
+                if marker.pending: NodeIcon {
+                    x: -marker.size / 2;
+                    y: -marker.size / 2;
+                    kind: node.kind;
+                    size: marker.size;
+                    ink: Theme.warning;
+                    cache-rendering-hint: true;
+                }
+
+                // More than one exit here: a second dot offset behind it.
+                if node.count > 1 && !marker.current: Rectangle {
+                    x: marker.size / 2 - 2px;
+                    y: -marker.size / 2 - 3px;
+                    width: 6px;
+                    height: 6px;
+                    border-radius: 3px;
+                    background: Theme.highlight;
+                }
+
+                ta := TouchArea {
+                    x: -14px;
+                    y: -14px;
+                    width: 28px;
+                    height: 28px;
+                    mouse-cursor: root.locked ? MouseCursor.default : MouseCursor.pointer;
+                    accessible-role: button;
+                    accessible-label: node.label + " " + node.detail;
+                    accessible-action-default => { if (!root.locked) { root.picked(node.id); } }
+                    clicked => { if (!root.locked) { root.picked(node.id); } }
+                    changed has-hover => {
+                        if (self.has-hover) {
+                            root.hovered = node.id;
+                            root.hover-label = node.label;
+                            root.hover-detail = node.detail;
+                        } else if (root.hovered == node.id) {
+                            root.hovered = -1;
+                        }
+                    }
+                }
+            }
+
+            // Zoom controls, on top of everything.
+            Rectangle {
+                x: parent.width - self.width - 10px;
+                y: 10px;
+                width: Theme.guilds-rail-width;
+                height: 3 * Theme.guilds-rail-width;
+                background: #000000bf;
+                border-width: 1px;
+                border-color: Theme.border;
+
+                VerticalLayout {
+                    spacing: 0;
+                    SquareActionButton {
+                        icon: Icon.plus;
+                        a11y-label: "Zoom in";
+                        label-size: 13px;
+                        clicked => { root.zoom-to(root.view-w / 1.6, 0.5, 0.5); }
+                    }
+                    Rectangle { height: 1px; background: Theme.border-subtle; }
+                    SquareActionButton {
+                        icon: Icon.minus;
+                        a11y-label: "Zoom out";
+                        label-size: 13px;
+                        clicked => { root.zoom-to(root.view-w * 1.6, 0.5, 0.5); }
+                    }
+                    Rectangle { height: 1px; background: Theme.border-subtle; }
+                    SquareActionButton {
+                        icon: Icon.fit;
+                        a11y-label: "Fit the whole world";
+                        label-size: 13px;
+                        clicked => { root.reset-view(); }
+                    }
+                }
+            }
+        }
+
+        // Read-out band. A floating chip would clip against the pane edges and
+        // cover its own neighbours; this never moves.
+        Rectangle {
+            height: Theme.row-height;
+            background: #000000bf;
+            Rectangle { y: 0; height: 1px; background: Theme.border-subtle; }
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 10px;
+
+                Rectangle {
+                    width: 9px;
+                    Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        width: 9px;
+                        height: 9px;
+                        border-radius: 4.5px;
+                        background: root.hovered >= 0 ? Theme.highlight : Theme.text-muted;
+                        visible: root.hovered >= 0 || root.relay-label != "";
+                    }
+                }
+
+                Text {
+                    text: root.hovered >= 0
+                        ? root.hover-label
+                        : (root.has-relay ? "Entry · " + root.relay-label : "Hover a node");
+                    color: root.hovered >= 0 ? Theme.text-primary : Theme.text-muted;
+                    font-size: Theme.font-sm;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: root.hovered >= 0 ? root.hover-detail : "";
+                    color: Theme.text-muted;
+                    font-size: Theme.font-xs;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+
+                Text {
+                    text: root.unplaced > 0 ? root.unplaced + " off the map" : "";
+                    color: Theme.warning;
+                    font-size: Theme.font-xs;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: round(1.0 / root.view-w * 10) / 10 + "×";
+                    color: root.view-w < 1.0 ? Theme.text-secondary : Theme.text-muted;
+                    font-size: Theme.font-xs;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    width: 34px;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+    }
+}

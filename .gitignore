@@ -1,0 +1,14 @@
+# Build output.
+/target
+
+# The installer is built from the release binary; it is an artefact, not
+# source. Ten megabytes of it, rebuilt by `installer/valira.iss` in seconds.
+/installer/out
+
+# Local tooling preferences, particular to one machine.
+/.claude
+
+# Editor and platform leftovers.
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,115 @@
+import { Theme } from "../theme.slint";
+
+// The interface's small symbols, drawn rather than typed.
+//
+// They used to be characters from "Segoe MDL2 Assets", which exists only on
+// Windows: everywhere else the same interface came up with the lock, the
+// profile, and every window control silently blank — not even a missing-glyph
+// box, just nothing where a button should be. Drawn as paths they are the same
+// on every platform, scale to any size, and take their colour from the caller.
+//
+// All of them are built in a 24 by 24 box and stroked, except where a solid
+// shape reads better at sixteen pixels than an outline would.
+
+export global Icon {
+    out property <int> none: 0;
+    out property <int> close: 1;          // a dismissal, or the caption close
+    out property <int> minimise: 2;
+    out property <int> maximise: 3;
+    out property <int> restore: 4;
+    out property <int> plus: 5;
+    out property <int> minus: 6;
+    out property <int> fit: 7;            // back to the whole world
+    out property <int> back: 8;
+    out property <int> chevron-right: 9;  // a country, folded shut
+    out property <int> chevron-down: 10;  // a country, folded open
+    out property <int> lock-closed: 11;   // tunnel up
+    out property <int> lock-open: 12;     // tunnel down
+    out property <int> person: 13;
+    out property <int> warning: 14;
+    out property <int> info: 15;
+    out property <int> sign-out: 16;
+}
+
+export component Glyph inherits Rectangle {
+    in property <int> kind;
+    in property <length> size: 16px;
+    in property <color> ink: Theme.text-secondary;
+    // Thin enough to stay light at sixteen pixels, heavy enough not to
+    // disappear on the acrylic behind it.
+    property <length> weight: root.size / 11;
+
+    width: root.size;
+    height: root.size;
+
+    // Everything that reads better as a line than as a shape.
+    if root.stroked != "": Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        commands: root.stroked;
+        stroke: root.ink;
+        stroke-width: root.weight;
+    }
+
+    // Everything that reads better solid.
+    if root.filled != "": Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        commands: root.filled;
+        fill: root.ink;
+    }
+
+    property <string> stroked:
+        root.kind == Icon.close ? "M 6.5 6.5 L 17.5 17.5 M 17.5 6.5 L 6.5 17.5"
+      : root.kind == Icon.minimise ? "M 5 12 L 19 12"
+      : root.kind == Icon.maximise ? "M 5.5 5.5 L 18.5 5.5 L 18.5 18.5 L 5.5 18.5 Z"
+      : root.kind == Icon.restore ? "M 8.5 5.5 L 18.5 5.5 L 18.5 15.5 "
+                                  + "M 5.5 8.5 L 15.5 8.5 L 15.5 18.5 L 5.5 18.5 Z"
+      : root.kind == Icon.plus ? "M 12 5 L 12 19 M 5 12 L 19 12"
+      : root.kind == Icon.minus ? "M 5 12 L 19 12"
+      // Four corners of a frame: the whole world back inside the pane.
+      : root.kind == Icon.fit ? "M 4 8.5 L 4 4 L 8.5 4 M 15.5 4 L 20 4 L 20 8.5 "
+                              + "M 20 15.5 L 20 20 L 15.5 20 M 8.5 20 L 4 20 L 4 15.5"
+      : root.kind == Icon.back ? "M 10.5 5.5 L 4 12 L 10.5 18.5 M 4 12 L 20 12"
+      : root.kind == Icon.chevron-right ? "M 9.5 5.5 L 16 12 L 9.5 18.5"
+      : root.kind == Icon.chevron-down ? "M 5.5 9.5 L 12 16 L 18.5 9.5"
+      // The shackle only. Its body is the filled shape below, so the two are
+      // drawn in one glyph: an outlined body would read as a box at this size.
+      : root.kind == Icon.lock-closed ? "M 8.4 11 L 8.4 8 Q 8.4 4.2 12 4.2 Q 15.6 4.2 15.6 8 L 15.6 11"
+      // Open: the shackle has come off its far post.
+      : root.kind == Icon.lock-open ? "M 8.4 11 L 8.4 8 Q 8.4 4.2 12 4.2 Q 15.6 4.2 15.6 7.4"
+      : root.kind == Icon.info ? "M 12 4.5 Q 19.5 4.5 19.5 12 Q 19.5 19.5 12 19.5 "
+                               + "Q 4.5 19.5 4.5 12 Q 4.5 4.5 12 4.5 Z M 12 10.5 L 12 16"
+      // A door with a way out of it.
+      : root.kind == Icon.sign-out ? "M 13 4.5 L 5 4.5 L 5 19.5 L 13 19.5 "
+                                   + "M 10.5 12 L 20 12 M 16.5 8.5 L 20 12 L 16.5 15.5"
+      : "";
+
+    property <string> filled:
+        root.kind == Icon.lock-closed || root.kind == Icon.lock-open
+          ? "M 5.4 10.6 L 18.6 10.6 L 18.6 20.4 L 5.4 20.4 Z"
+      : root.kind == Icon.person ? "M 12 4 Q 15.4 4 15.4 7.4 Q 15.4 10.8 12 10.8 "
+                                 + "Q 8.6 10.8 8.6 7.4 Q 8.6 4 12 4 Z "
+                                 + "M 4.6 20.6 Q 4.6 13.4 12 13.4 Q 19.4 13.4 19.4 20.6 Z"
+      // Solid triangle with the bar and dot punched out, so the warning keeps
+      // its weight where an outline would thin away.
+      : root.kind == Icon.warning ? "M 12 3.4 L 22.2 20.8 L 1.8 20.8 Z"
+      : root.kind == Icon.info ? "M 11.1 6.6 L 12.9 6.6 L 12.9 8.4 L 11.1 8.4 Z"
+      : "";
+
+    // The two marks inside the warning triangle, in whatever sits behind it.
+    in property <color> behind: #000000;
+    if root.kind == Icon.warning: Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        commands: "M 11.1 9.6 L 12.9 9.6 L 12.9 15.4 L 11.1 15.4 Z "
+                + "M 11.1 16.9 L 12.9 16.9 L 12.9 18.7 L 11.1 18.7 Z";
+        fill: root.behind;
+    }
+}

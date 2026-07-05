@@ -1,0 +1,77 @@
+import { Theme } from "../theme.slint";
+import { Glyph, Icon } from "glyphs.slint";
+
+// Minimize, maximize or restore, and close.
+//
+// Two platforms drive these, and they must not fight. On Windows the frame
+// declares this strip non-client and answers `WM_NCHITTEST` with
+// `HTMIN`/`HTMAX`/`HTCLOSE`, which is what gives Windows 11 its Snap Layouts
+// flyout — clicks never reach Slint at all, so the touch areas below are inert
+// there and `hovered` is pushed in from the frame. Everywhere else there is no
+// such frame, and the touch areas are the only thing that makes these buttons
+// buttons.
+component CaptionButton inherits Rectangle {
+    in property <int> icon;
+    in property <bool> highlighted;
+    in property <string> a11y-label;
+    callback clicked();
+
+    property <bool> lit: root.highlighted || ta.has-hover;
+
+    width: 46px;
+    height: Theme.titlebar-height;
+    background: root.lit
+        ? (root.danger ? Theme.danger : Theme.highlight)
+        : transparent;
+    in property <bool> danger: false;
+
+    Glyph {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        kind: root.icon;
+        size: 16px;
+        ink: root.lit
+            ? (root.danger ? Theme.text-primary : #000000)
+            : Theme.text-secondary;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        accessible-role: button;
+        accessible-label: root.a11y-label;
+        accessible-action-default => { root.clicked(); }
+        clicked => { root.clicked(); }
+    }
+}
+
+// hovered: 0 none, 1 min, 2 max, 3 close. Pushed in from Win32; unused
+// elsewhere, where the touch areas light themselves.
+export component WindowControls inherits HorizontalLayout {
+    in property <bool> is-maximized;
+    in property <int> hovered;
+    callback minimise();
+    callback toggle-maximise();
+    callback close();
+
+    spacing: 0;
+
+    CaptionButton {
+        icon: Icon.minimise;
+        a11y-label: "Minimise";
+        highlighted: root.hovered == 1;
+        clicked => { root.minimise(); }
+    }
+    CaptionButton {
+        icon: root.is-maximized ? Icon.restore : Icon.maximise;
+        a11y-label: root.is-maximized ? "Restore" : "Maximise";
+        highlighted: root.hovered == 2;
+        clicked => { root.toggle-maximise(); }
+    }
+    CaptionButton {
+        icon: Icon.close;
+        a11y-label: "Close the window";
+        danger: true;
+        highlighted: root.hovered == 3;
+        clicked => { root.close(); }
+    }
+}

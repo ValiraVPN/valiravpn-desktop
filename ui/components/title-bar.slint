@@ -1,0 +1,180 @@
+import { Theme } from "../theme.slint";
+import { WindowControls } from "window-controls.slint";
+import { Glyph, Icon } from "glyphs.slint";
+
+// Tunnel state chip: a colourised padlock and the state in caps. Sized by its
+// own content — "TUNNEL UP" has no business reserving the room "ACTIVATING"
+// needs — so the Win32 hit-test is told where it lands rather than assuming.
+component TunnelStatusButton inherits Rectangle {
+    in property <string> state; // down / pending / up
+    in property <string> text;
+    callback clicked();
+
+    property <color> status-color: root.state == "down"
+        ? Theme.danger
+        : (root.state == "pending" ? Theme.warning : Theme.success);
+
+    height: Theme.titlebar-height;
+    // Padding, glyph, gap, and whatever the label actually measures.
+    width: 12px + 18px + 8px + label.preferred-width + 12px;
+    background: ta.pressed ? Theme.surface-pressed : (ta.has-hover ? Theme.surface-hover : transparent);
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 8px;
+
+        VerticalLayout {
+            alignment: center;
+            Glyph {
+                kind: root.state == "up" ? Icon.lock-closed : Icon.lock-open;
+                size: 16px;
+                ink: root.status-color;
+            }
+        }
+
+        label := Text {
+            text: root.text;
+            color: root.status-color;
+            font-size: Theme.font-sm;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        accessible-role: button;
+        accessible-label: "Tunnel details";
+        accessible-action-default => { root.clicked(); }
+        clicked => { root.clicked(); }
+    }
+}
+
+// Account menu. One square on the grid, sitting just left of the caption
+// buttons so the window controls stay where Windows puts them.
+component ProfileButton inherits Rectangle {
+    in property <bool> open;
+    callback clicked();
+
+    width: Theme.titlebar-height;
+    height: Theme.titlebar-height;
+    background: root.open
+        ? Theme.surface-active
+        : (ta.pressed ? Theme.surface-pressed : (ta.has-hover ? Theme.surface-hover : transparent));
+
+    Glyph {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        kind: Icon.person;
+        size: 17px;
+        ink: (root.open || ta.has-hover || ta.pressed) ? Theme.highlight : Theme.text-secondary;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        accessible-role: button;
+        accessible-label: "Account";
+        accessible-action-default => { root.clicked(); }
+        clicked => { root.clicked(); }
+    }
+}
+
+// Custom title bar with branding on the left and native-hit-tested controls on
+// the right.
+export component TitleBar inherits Rectangle {
+    in property <bool> is-maximized;
+    in property <int> caption-hover;
+    in property <bool> show-tunnel-status;
+    in property <bool> show-profile;
+    in property <bool> profile-open;
+    in property <string> tunnel-state;
+    in property <string> tunnel-status-text;
+    callback tunnel-menu-clicked();
+    callback profile-clicked();
+    callback minimise();
+    callback toggle-maximise();
+    callback close-window();
+    callback drag-window();
+
+    // Where the clickable parts actually landed, measured after layout. The
+    // Win32 hit-test reads these instead of repeating the numbers: a chip that
+    // sizes to its text cannot be described by a constant, and the brand width
+    // used to be stated in two places that had to be kept in step by hand.
+    out property <length> chip-start: brand.width;
+    out property <length> chip-end: brand.width + (root.show-tunnel-status ? chip.width : 0px);
+    out property <length> profile-width: root.show-profile ? Theme.titlebar-height : 0px;
+
+    height: Theme.titlebar-height;
+    background: Theme.bg-titlebar;
+
+    HorizontalLayout {
+        padding: 0;
+        spacing: 0;
+
+        // The mark then the name, the same pairing the site uses. Part of the
+        // drag band.
+        brand := Rectangle {
+            width: Theme.titlebar-brand-width;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 0px;
+                spacing: 8px;
+                alignment: start;
+
+                VerticalLayout {
+                    alignment: center;
+                    Image {
+                        width: 20px;
+                        height: 20px;
+                        source: @image-url("../assets/logo.svg");
+                        image-fit: contain;
+                    }
+                }
+
+                Text {
+                    text: "ValiraVPN";
+                    color: Theme.text-primary;
+                    font-size: Theme.font-md;
+                    font-weight: 800;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        chip := TunnelStatusButton {
+            visible: root.show-tunnel-status;
+            width: root.show-tunnel-status ? self.preferred-width : 0px;
+            state: root.tunnel-state;
+            text: root.tunnel-status-text;
+            clicked => { root.tunnel-menu-clicked(); }
+        }
+
+        // The remaining band is what a window is dragged by. On Windows the
+        // frame already claims it as `HTCAPTION` and this touch area never sees
+        // a click; everywhere else it is the only way to move the window.
+        Rectangle {
+            horizontal-stretch: 1;
+            TouchArea {
+                pointer-event(e) => {
+                    if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) {
+                        root.drag-window();
+                    }
+                }
+            }
+        }
+
+        if root.show-profile: ProfileButton {
+            open: root.profile-open;
+            clicked => { root.profile-clicked(); }
+        }
+
+        WindowControls {
+            is-maximized: root.is-maximized;
+            hovered: root.caption-hover;
+            minimise => { root.minimise(); }
+            toggle-maximise => { root.toggle-maximise(); }
+            close => { root.close-window(); }
+        }
+    }
+}

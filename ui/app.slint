@@ -1,0 +1,762 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { TitleBar } from "components/title-bar.slint";
+import { Glyph, Icon } from "components/glyphs.slint";
+import { WorldMap, MapNode, MapDot } from "components/world-map.slint";
+import {
+    ExitEntry, ExitRow, CountryRow, FieldRow, HopRow, MenuRow, KindTabs, TextField,
+    AuthButton, BusyBar, SquareActionButton, SubtleActionButton,
+    DialogActionButton, WhiteScrollbar, NoticeBar,
+} from "components/primitives.slint";
+
+import "assets/fonts/InterVariable.ttf";
+
+export { ExitEntry, MapNode, MapDot }
+
+export enum Screen {
+    SignIn,
+    Choosing,
+    Connected,
+}
+
+// Exit list: the filter header and the rows. The screen's action bar sits
+// outside so it can span both panes when the map is up.
+component ExitList inherits Rectangle {
+    in property <[ExitEntry]> exits;
+    in property <int> total-exits;
+    in property <int> chosen-exit;
+    in property <int> pending-exit;
+    in property <bool> busy;
+    in property <bool> can-close;
+    in property <string> chosen-country;
+    in property <int> kind-filter;
+    in property <int> count-all;
+    in property <int> count-residential;
+    in property <int> count-datacentre;
+    in-out property <string> filter;
+    callback picked(int);
+    callback toggled(string);
+    callback closed();
+    callback filter-changed(string);
+    callback kind-picked(int);
+
+    VerticalLayout {
+        spacing: 0;
+
+        Rectangle {
+            height: Theme.header-height;
+            background: #000000bf;
+            HorizontalLayout {
+                padding: 0;
+                spacing: 0;
+
+                if root.can-close: SquareActionButton {
+                    icon: Icon.back;
+                    a11y-label: "Back to the tunnel";
+                    label-size: 14px;
+                    clicked => { root.closed(); }
+                }
+
+                TextField {
+                    horizontal-stretch: 1;
+                    flat: true;
+                    placeholder: "Filter by country or city";
+                    text <=> root.filter;
+                    edited(t) => { root.filter-changed(t); }
+                }
+
+                if root.filter != "": SquareActionButton {
+                    icon: Icon.close;
+                    a11y-label: "Clear the filter";
+                    label-size: 14px;
+                    clicked => {
+                        root.filter = "";
+                        root.filter-changed("");
+                    }
+                }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+
+        KindTabs {
+            chosen: root.kind-filter;
+            all-count: root.count-all;
+            residential-count: root.count-residential;
+            datacentre-count: root.count-datacentre;
+            picked(k) => { root.kind-picked(k); }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            clip: true;
+
+            exitlist := ListView {
+                vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+                property <length> row-h: Theme.row-height;
+                // One flat model, two kinds of row: the country that folds, and
+                // the nodes underneath it.
+                for entry in root.exits: Rectangle {
+                    height: Theme.row-height;
+
+                    if entry.header: CountryRow {
+                        entry: entry;
+                        holds-current: entry.code == root.chosen-country;
+                        toggled => { root.toggled(entry.code); }
+                        scroll-down => {
+                            exitlist.viewport-y = -min(max(0px, exitlist.viewport-height - exitlist.visible-height), (floor((-exitlist.viewport-y) / exitlist.row-h) + 1) * exitlist.row-h);
+                        }
+                        scroll-up => {
+                            exitlist.viewport-y = -max(0px, (ceil((-exitlist.viewport-y) / exitlist.row-h) - 1) * exitlist.row-h);
+                        }
+                    }
+
+                    if !entry.header: ExitRow {
+                        entry: entry;
+                        current: entry.id == root.chosen-exit;
+                        pending: entry.id == root.pending-exit;
+                        locked: root.busy;
+                        picked => { root.picked(entry.id); }
+                        scroll-down => {
+                            exitlist.viewport-y = -min(max(0px, exitlist.viewport-height - exitlist.visible-height), (floor((-exitlist.viewport-y) / exitlist.row-h) + 1) * exitlist.row-h);
+                        }
+                        scroll-up => {
+                            exitlist.viewport-y = -max(0px, (ceil((-exitlist.viewport-y) / exitlist.row-h) - 1) * exitlist.row-h);
+                        }
+                    }
+                }
+            }
+
+            WhiteScrollbar {
+                x: parent.width - self.width;
+                height: parent.height;
+                viewport-height: exitlist.viewport-height;
+                visible-height: exitlist.visible-height;
+                viewport-y <=> exitlist.viewport-y;
+                row-h: exitlist.row-h;
+            }
+
+            if root.exits.length == 0: VerticalLayout {
+                width: 100%;
+                height: 100%;
+                alignment: center;
+                spacing: 8px;
+                Text {
+                    text: root.total-exits == 0 ? "No exits available" : "Nothing matches that filter";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-lg;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: root.total-exits == 0
+                        ? "The service has not announced any exit nodes yet."
+                        : "Clear the filter to see all " + root.total-exits + " exits.";
+                    color: Theme.text-muted;
+                    font-size: Theme.font-md;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}
+
+// Connected screen: the active exit header and the tunnel readings.
+component TunnelPanel inherits Rectangle {
+    in property <string> account-expiry;
+    in property <string> device-name;
+    in property <string> tunnel-address;
+    in property <string> relay-label;
+    in property <string> exit-label;
+    in property <string> exit-state;
+    in property <string> traffic-in;
+    in property <string> traffic-out;
+    in property <string> handshake;
+    callback change-exit();
+
+    VerticalLayout {
+        spacing: 0;
+
+        Rectangle {
+            height: Theme.header-height;
+            background: #000000bf;
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 0px;
+                spacing: 10px;
+                Text {
+                    text: root.exit-label == "" ? "UNKNOWN EXIT" : root.exit-label;
+                    color: Theme.text-primary;
+                    font-size: Theme.font-md;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                SubtleActionButton {
+                    button-width: 110px;
+                    label: "CHANGE";
+                    clicked => { root.change-exit(); }
+                }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+
+        Rectangle {
+            vertical-stretch: 1;
+            clip: true;
+            VerticalLayout {
+                spacing: 0;
+                FieldRow { label: "ACCOUNT"; value: root.account-expiry; }
+                FieldRow { label: "DEVICE"; value: root.device-name; }
+                FieldRow { label: "ADDRESS"; value: root.tunnel-address; }
+                FieldRow { label: "ENTRY"; value: root.relay-label; }
+                FieldRow { label: "EXIT"; value: root.exit-label; strong: true; }
+                FieldRow { label: "RECEIVED"; value: root.traffic-in; }
+                FieldRow { label: "SENT"; value: root.traffic-out; }
+                FieldRow { label: "HANDSHAKE"; value: root.handshake; }
+
+                if root.exit-state != "": Rectangle {
+                    background: #00000099;
+                    HorizontalLayout {
+                        padding-left: 18px;
+                        padding-right: 18px;
+                        spacing: 10px;
+                        Rectangle {
+                            width: 16px;
+                            Glyph {
+                                kind: Icon.warning;
+                                size: 15px;
+                                ink: Theme.warning;
+                                behind: Theme.bg-fallback;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+                        VerticalLayout {
+                            padding-top: 13px;
+                            padding-bottom: 13px;
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: root.exit-state;
+                                color: Theme.warning;
+                                font-size: Theme.font-sm;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+            }
+        }
+    }
+}
+
+export component App inherits Window {
+    // Frame. `opaque` is set by main when the GPU renderer is unavailable and
+    // the acrylic backdrop cannot show through.
+    in property <bool> opaque: false;
+    in property <bool> is-maximized: false;
+    in property <int> caption-hover: 0;
+    in-out property <bool> tunnel-menu-open: false;
+    in-out property <bool> profile-menu-open: false;
+
+    // Read by the Win32 hit-test, measured rather than repeated: these decide
+    // which parts of the title bar take clicks and which drag the window.
+    out property <length> hit-chip-start: bar.chip-start;
+    out property <length> hit-chip-end: bar.chip-end;
+    out property <length> hit-profile-width: bar.profile-width;
+
+    // Past this width the window splits: the current view on the left, the
+    // world map on the right.
+    property <bool> wide: root.width >= Theme.wide-breakpoint;
+
+    in property <Screen> screen: Screen.SignIn;
+    in property <string> notice;
+    in property <bool> notice-danger: true;
+    in property <bool> busy;
+
+    in property <string> account-expiry;
+    in property <string> device-name;
+    in property <string> tunnel-address;
+    in property <string> relay-label;
+    in property <string> exit-label;
+    in property <string> exit-state;
+    in property <string> traffic-in;
+    in property <string> traffic-out;
+    in property <string> handshake;
+
+    in property <string> tunnel-state: "down"; // down / pending / up
+    in property <string> tunnel-status-text: "TUNNEL DOWN";
+    // Which backend carries the traffic, and so whether closing the window
+    // takes the tunnel with it.
+    in property <string> tunnel-kind;
+
+    in property <[ExitEntry]> exits;
+    in property <int> total-exits: 0;
+    // Nodes the filter kept, and the countries they fall under. `exits` counts
+    // rows, headers included, so it cannot answer either.
+    in property <int> shown-exits: 0;
+    in property <int> country-count: 0;
+    in property <int> chosen-exit: -1;
+    in property <string> chosen-country;
+    in property <int> pending-exit: -1;
+    // -1 shows everything; otherwise a NodeKind. Filters the list and the map
+    // together — they are two views of the same set.
+    in property <int> kind-filter: -1;
+    in property <int> count-all: 0;
+    in property <int> count-residential: 0;
+    in property <int> count-datacentre: 0;
+    in property <bool> can-close-chooser: false;
+    in-out property <string> filter;
+    in-out property <string> account-number;
+
+    // Map.
+    in property <[MapNode]> map-nodes;
+    in property <[MapDot]> map-link;
+    in property <bool> has-relay: false;
+    in property <float> relay-nx;
+    in property <float> relay-ny;
+    in property <int> unplaced: 0;
+    in property <image> map-image;
+    // The window `map-image` was drawn for. Lags the live view during a
+    // gesture; the pane bridges the gap by moving the image it already has.
+    in property <float> map-image-view-x;
+    in property <float> map-image-view-y;
+    in property <float> map-image-view-w: 1;
+    in property <float> map-image-view-h: 1;
+    callback map-view-changed(float, float, float, float, length, length);
+    callback map-view-settled(float, float, float, float, length, length);
+    callback map-zoom-changed(float);
+
+    callback sign-in();
+    callback pick-exit(int);
+    callback toggle-country(string);
+    // The window's own controls. On Windows the native frame handles this strip
+    // and these never fire; everywhere else they are the only way to move,
+    // resize or close the window.
+    callback minimise-window();
+    callback toggle-maximise-window();
+    callback close-window();
+    callback drag-window();
+    callback pick-kind(int);
+    callback disconnect();
+    callback sign-out();
+    callback open-chooser();
+    callback close-chooser();
+    callback filter-changed(string);
+    callback dismiss-notice();
+
+    title: "ValiraVPN";
+    background: root.opaque ? Theme.bg-fallback : Theme.bg-window;
+    default-font-family: Theme.font-family;
+    no-frame: true;
+
+    min-width: 12 * Theme.guilds-rail-width;
+    min-height: 14 * Theme.guilds-rail-width;
+    preferred-width: 14 * Theme.guilds-rail-width;
+    preferred-height: 16 * Theme.guilds-rail-width;
+
+    VerticalLayout {
+        spacing: 0;
+
+        bar := TitleBar {
+            is-maximized: root.is-maximized;
+            caption-hover: root.caption-hover;
+            show-tunnel-status: root.screen != Screen.SignIn;
+            show-profile: root.screen != Screen.SignIn;
+            profile-open: root.profile-menu-open;
+            tunnel-state: root.tunnel-state;
+            tunnel-status-text: root.tunnel-status-text;
+            tunnel-menu-clicked => {
+                root.profile-menu-open = false;
+                root.tunnel-menu-open = !root.tunnel-menu-open;
+            }
+            profile-clicked => {
+                root.tunnel-menu-open = false;
+                root.profile-menu-open = !root.profile-menu-open;
+            }
+            minimise => { root.minimise-window(); }
+            toggle-maximise => { root.toggle-maximise-window(); }
+            close-window => { root.close-window(); }
+            drag-window => { root.drag-window(); }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            clip: true;
+            background: Theme.bg-content;
+
+            // ── Sign in ──────────────────────────────────────────────────
+            if root.screen == Screen.SignIn: VerticalLayout {
+                width: 100%;
+                height: 100%;
+                alignment: center;
+
+                HorizontalLayout {
+                    alignment: center;
+                    VerticalLayout {
+                        width: Theme.sign-in-column-width;
+                        spacing: 12px;
+
+                        Text {
+                            text: "VALIRA";
+                            color: Theme.text-primary;
+                            font-size: 44px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: "A WireGuard tunnel, with no account in your name.";
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-md;
+                            horizontal-alignment: center;
+                        }
+
+                        Rectangle { height: Theme.progress-height; }
+
+                        Text {
+                            text: "ACCOUNT NUMBER";
+                            color: Theme.text-muted;
+                            font-size: Theme.font-xs;
+                            font-weight: 700;
+                        }
+                        TextField {
+                            placeholder: "0000 0000 0000 0000";
+                            text <=> root.account-number;
+                            enabled: !root.busy;
+                            accepted(t) => { root.sign-in(); }
+                        }
+                        Text {
+                            text: "Sixteen digits. No email, no password. The tunnel's private key is generated here and never leaves this machine.";
+                            color: Theme.text-muted;
+                            font-size: Theme.font-sm;
+                            wrap: word-wrap;
+                        }
+
+                        Rectangle { height: Theme.progress-height; }
+
+                        AuthButton {
+                            btn-width: Theme.sign-in-column-width;
+                            label: root.busy ? "SIGNING IN…" : "SIGN IN";
+                            primary: true;
+                            enabled: !root.busy;
+                            clicked => { root.sign-in(); }
+                        }
+
+                        if root.busy: BusyBar { }
+                    }
+                }
+            }
+
+            // ── Exit chooser ─────────────────────────────────────────────
+            if root.screen == Screen.Choosing: VerticalLayout {
+                spacing: 0;
+
+                HorizontalLayout {
+                    vertical-stretch: 1;
+                    spacing: 0;
+
+                    ExitList {
+                        width: root.wide ? Theme.list-pane-width : root.width;
+                        exits: root.exits;
+                        total-exits: root.total-exits;
+                        chosen-exit: root.chosen-exit;
+                        pending-exit: root.pending-exit;
+                        busy: root.busy;
+                        can-close: root.can-close-chooser;
+                        chosen-country: root.chosen-country;
+                        kind-filter: root.kind-filter;
+                        count-all: root.count-all;
+                        count-residential: root.count-residential;
+                        count-datacentre: root.count-datacentre;
+                        filter <=> root.filter;
+                        picked(id) => { root.pick-exit(id); }
+                        toggled(code) => { root.toggle-country(code); }
+                        kind-picked(k) => { root.pick-kind(k); }
+                        closed => { root.close-chooser(); }
+                        filter-changed(t) => { root.filter-changed(t); }
+                    }
+
+                    if root.wide: Rectangle { width: 1px; background: Theme.border-subtle; }
+
+                    if root.wide: WorldMap {
+                        horizontal-stretch: 1;
+                        nodes: root.map-nodes;
+                        current-node: root.chosen-exit;
+                        pending-node: root.pending-exit;
+                        locked: root.busy;
+                        has-relay: root.has-relay;
+                        relay-nx: root.relay-nx;
+                        relay-ny: root.relay-ny;
+                        relay-label: root.relay-label;
+                        unplaced: root.unplaced;
+                        canvas-image: root.map-image;
+                        image-view-x: root.map-image-view-x;
+                        image-view-y: root.map-image-view-y;
+                        image-view-w: root.map-image-view-w;
+                        image-view-h: root.map-image-view-h;
+                        picked(id) => { root.pick-exit(id); }
+                        view-changed(vx, vy, vw, vh, pw, ph) => { root.map-view-changed(vx, vy, vw, vh, pw, ph); }
+                        view-settled(vx, vy, vw, vh, pw, ph) => { root.map-view-settled(vx, vy, vw, vh, pw, ph); }
+                        zoom-changed(z) => { root.map-zoom-changed(z); }
+                    }
+                }
+
+                if root.busy: BusyBar { }
+
+                Rectangle {
+                    height: Theme.footer-height;
+                    background: #000000bf;
+                    Rectangle { y: 0; height: 1px; background: Theme.border-subtle; }
+                    HorizontalLayout {
+                        padding-left: 18px;
+                        padding-right: 18px;
+                        // The bar is taller than the buttons; split the slack so
+                        // they sit centred instead of wherever the layout's
+                        // default alignment leaves them.
+                        padding-top: (Theme.footer-height - Theme.guilds-rail-width) / 2;
+                        padding-bottom: (Theme.footer-height - Theme.guilds-rail-width) / 2;
+                        spacing: 10px;
+                        Rectangle { horizontal-stretch: 1; }
+                        Text {
+                            // Countries, not exits: the list counts rows, headers included.
+                            text: (root.shown-exits == root.total-exits
+                                ? root.total-exits + " exits"
+                                : root.shown-exits + " / " + root.total-exits + " exits")
+                                + " · " + root.country-count + " countries";
+                            color: Theme.text-muted;
+                            font-size: Theme.font-xs;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            // ── Connected ────────────────────────────────────────────────
+            if root.screen == Screen.Connected: VerticalLayout {
+                spacing: 0;
+
+                HorizontalLayout {
+                    vertical-stretch: 1;
+                    spacing: 0;
+
+                    TunnelPanel {
+                        width: root.wide ? Theme.list-pane-width : root.width;
+                        account-expiry: root.account-expiry;
+                        device-name: root.device-name;
+                        tunnel-address: root.tunnel-address;
+                        relay-label: root.relay-label;
+                        exit-label: root.exit-label;
+                        exit-state: root.exit-state;
+                        traffic-in: root.traffic-in;
+                        traffic-out: root.traffic-out;
+                        handshake: root.handshake;
+                        change-exit => { root.open-chooser(); }
+                    }
+
+                    if root.wide: Rectangle { width: 1px; background: Theme.border-subtle; }
+
+                    if root.wide: WorldMap {
+                        horizontal-stretch: 1;
+                        nodes: root.map-nodes;
+                        link: root.map-link;
+                        current-node: root.chosen-exit;
+                        pending-node: root.pending-exit;
+                        locked: root.busy;
+                        has-relay: root.has-relay;
+                        relay-nx: root.relay-nx;
+                        relay-ny: root.relay-ny;
+                        relay-label: root.relay-label;
+                        unplaced: root.unplaced;
+                        canvas-image: root.map-image;
+                        image-view-x: root.map-image-view-x;
+                        image-view-y: root.map-image-view-y;
+                        image-view-w: root.map-image-view-w;
+                        image-view-h: root.map-image-view-h;
+                        picked(id) => { root.pick-exit(id); }
+                        view-changed(vx, vy, vw, vh, pw, ph) => { root.map-view-changed(vx, vy, vw, vh, pw, ph); }
+                        view-settled(vx, vy, vw, vh, pw, ph) => { root.map-view-settled(vx, vy, vw, vh, pw, ph); }
+                        zoom-changed(z) => { root.map-zoom-changed(z); }
+                    }
+                }
+
+                if root.busy: BusyBar { }
+
+                Rectangle {
+                    height: Theme.footer-height;
+                    background: #000000bf;
+                    Rectangle { y: 0; height: 1px; background: Theme.border-subtle; }
+                    HorizontalLayout {
+                        padding-left: 18px;
+                        padding-right: 18px;
+                        // The bar is taller than the buttons; split the slack so
+                        // they sit centred instead of wherever the layout's
+                        // default alignment leaves them.
+                        padding-top: (Theme.footer-height - Theme.guilds-rail-width) / 2;
+                        padding-bottom: (Theme.footer-height - Theme.guilds-rail-width) / 2;
+                        spacing: 10px;
+                        Rectangle { horizontal-stretch: 1; }
+                        DialogActionButton {
+                            label: root.busy ? "CLOSING…" : "CLOSE TUNNEL";
+                            button-width: 160px;
+                            primary: true;
+                            enabled: !root.busy;
+                            clicked => { root.disconnect(); }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.notice != "": NoticeBar {
+            text: root.notice;
+            danger: root.notice-danger;
+            dismissed => { root.dismiss-notice(); }
+        }
+    }
+
+    // ── Tunnel circuit menu ──────────────────────────────────────────────
+    if root.tunnel-menu-open && root.screen != Screen.SignIn: TouchArea {
+        y: Theme.titlebar-height;
+        height: parent.height - Theme.titlebar-height;
+        clicked => { root.tunnel-menu-open = false; }
+    }
+
+    if root.tunnel-menu-open && root.screen != Screen.SignIn: Rectangle {
+        x: root.hit-chip-start;
+        y: Theme.titlebar-height;
+        width: Theme.menu-width;
+        height: Theme.header-height + 4 * Theme.guilds-rail-width;
+        background: #000000f2;
+        border-width: 1px;
+        border-color: #ffffff33;
+
+        TouchArea { }
+
+        VerticalLayout {
+            spacing: 0;
+
+            Rectangle {
+                height: Theme.header-height;
+                background: #ffffff0d;
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    spacing: 8px;
+                    Text {
+                        text: "Tunnel circuit";
+                        color: Theme.text-primary;
+                        font-size: Theme.font-md;
+                        font-weight: 800;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text {
+                        text: root.tunnel-status-text;
+                        color: root.tunnel-state == "down"
+                            ? Theme.danger
+                            : (root.tunnel-state == "pending" ? Theme.warning : Theme.success);
+                        font-size: Theme.font-xs;
+                        font-weight: 800;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            HopRow {
+                first: true;
+                label: "ENTRY";
+                value: root.relay-label;
+                dot-color: root.tunnel-state == "up" ? Theme.success : Theme.text-muted;
+            }
+            HopRow {
+                label: "EXIT";
+                value: root.exit-label;
+                dot-color: root.exit-state != ""
+                    ? Theme.warning
+                    : (root.tunnel-state == "up" ? Theme.success : Theme.text-muted);
+            }
+            HopRow {
+                last: true;
+                label: "HANDSHAKE";
+                value: root.handshake;
+                dot-color: root.tunnel-state == "up" ? Theme.success : Theme.text-muted;
+            }
+
+            Rectangle { height: 1px; background: Theme.border-subtle; }
+
+            FieldRow {
+                label: "MODE";
+                value: root.tunnel-kind;
+                value-color: root.tunnel-kind == "Embedded · user-space path"
+                    ? Theme.warning
+                    : Theme.text-secondary;
+            }
+        }
+    }
+
+    // ── Account menu ─────────────────────────────────────────────────────
+    if root.profile-menu-open: TouchArea {
+        y: Theme.titlebar-height;
+        height: parent.height - Theme.titlebar-height;
+        clicked => { root.profile-menu-open = false; }
+    }
+
+    if root.profile-menu-open: Rectangle {
+        // Under its own button, which sits just left of the three caption
+        // buttons: 46 pixels each, the width Windows gives them.
+        x: parent.width - self.width - 3 * 46px;
+        y: Theme.titlebar-height;
+        width: 272px;
+        height: Theme.header-height + Theme.guilds-rail-width;
+        background: #000000f2;
+        border-width: 1px;
+        border-color: #ffffff33;
+
+        TouchArea { }
+
+        VerticalLayout {
+            spacing: 0;
+
+            Rectangle {
+                height: Theme.header-height;
+                background: #ffffff0d;
+                VerticalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: root.device-name == "" ? "This device" : root.device-name;
+                        color: Theme.text-primary;
+                        font-size: Theme.font-md;
+                        font-weight: 800;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: root.account-expiry;
+                        color: Theme.text-muted;
+                        font-size: Theme.font-xs;
+                        overflow: elide;
+                    }
+                }
+            }
+
+            Rectangle { height: 1px; background: Theme.border-subtle; }
+
+            MenuRow {
+                label: "Sign out";
+                icon: Icon.sign-out;
+                danger: true;
+                enabled: !root.busy;
+                clicked => {
+                    root.profile-menu-open = false;
+                    root.sign-out();
+                }
+            }
+        }
+    }
+}
