@@ -15,8 +15,6 @@ A WireGuard client that brings its own tunnel.
 [![Linux](https://img.shields.io/badge/Linux-X11%20%7C%20Wayland-FCC624?style=flat-square&logo=linux&logoColor=black)](#linux)
 [![macOS](https://img.shields.io/badge/macOS-supported-000000?style=flat-square&logo=apple&logoColor=white)](#macos)
 
-[![Made with Slint](https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png)](https://slint.dev)
-
 ![The client on Windows: the exit list beside the world map, its acrylic backdrop letting the desktop through](docs/screenshot.png)
 
 </div>
@@ -148,8 +146,9 @@ behind the decisions: [docs/design.md](docs/design.md).
 - **Natural Earth**, public domain. The coastline vectors come from it.
 - **Inter**, SIL Open Font License 1.1.
 - **Slint**, used under the Slint Royalty-free Desktop, Mobile, and Web
-  Applications License, not under its GPL option. That licence asks for the
-  attribution badge shown above.
+  Applications License, not under its GPL option. That licence asks for
+  attribution in one of two places: an About screen inside the application, or
+  the public page its binaries are downloaded from.
 
 ## Licence
 
