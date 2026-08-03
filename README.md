@@ -18,8 +18,10 @@ ValiraVPN accounts are managed on the official site [valiravpn.com](https://vali
   * [Compilation](#compilation)
 * [Configuration](#configuration)
 * [Versioning](#versioning)
-* [Security](#security)
+* [Contributing](#contributing)
+* [Security Policy](#security-policy)
 * [License](#license)
+* [Authors](#authors)
 * [Acknowledgements](#acknowledgements)
 
 <a name="about-this-repo"></a>
@@ -104,14 +106,20 @@ Signing out removes it and revokes the device.
 installer and publishes a release. The tag is checked against `Cargo.toml` first, so an
 installer can never advertise a version its executable does not carry.
 
-<a name="security"></a>
-## Security
+<a name="contributing"></a>
+## Contributing
+
+See [CONTRIBUTING.md](.github/CONTRIBUTING.md). Note that contributions are licensed on
+the terms in [LICENSE.md](LICENSE.md), which reserve commercial use to ValiraVPN.
+
+<a name="security-policy"></a>
+## Security Policy
+
+Do not report vulnerabilities through public issues. See
+[SECURITY.md](.github/SECURITY.md).
 
 The WireGuard private key is generated on the machine and never leaves it. Only its
 public half travels, when signing in creates the device.
-
-Report a vulnerability privately to [contact@grasandco.com](mailto:contact@grasandco.com)
-rather than through a public issue.
 
 <a name="license"></a>
 ## License
@@ -121,14 +129,13 @@ and share this source for any purpose that is not commercial. Commercial use is 
 to ValiraVPN. This is a source-available licence rather than an open source one, since it
 restricts the field of use.
 
+<a name="authors"></a>
+## Authors
+
+See [AUTHORS](AUTHORS).
+
 <a name="acknowledgements"></a>
 ## Acknowledgements
 
-* [Slint](https://slint.dev), used under its Royalty-free Desktop, Mobile, and Web
-  Applications License. That licence asks for attribution in one of two places: an About
-  screen inside the application, or the public page its binaries are downloaded from.
-* [boringtun](https://github.com/cloudflare/boringtun), BSD-3-Clause
-* [Wintun](https://www.wintun.net), WireGuard LLC, `vendor/wintun/LICENSE.txt`
-* [flag-icons](https://github.com/lipis/flag-icons), MIT
-* [Natural Earth](https://www.naturalearthdata.com), public domain
-* [Inter](https://rsms.me/inter), SIL Open Font License 1.1
+ValiraVPN for Desktop is built on the work of others, named in
+[ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md).
