@@ -1,95 +1,55 @@
-<div align="center">
+# ValiraVPN for Desktop (Windows/Linux)
 
-# ValiraVPN Desktop
+[![CI](https://github.com/ValiraVPN/valiravpn-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/ValiraVPN/valiravpn-desktop/actions/workflows/ci.yml)
+[![Release](https://github.com/ValiraVPN/valiravpn-desktop/actions/workflows/release.yml/badge.svg)](https://github.com/ValiraVPN/valiravpn-desktop/actions/workflows/release.yml)
 
-**The official desktop client for [ValiraVPN](https://valiravpn.com).**
+**ValiraVPN for Desktop** is the official ValiraVPN app for desktop platforms. Some of the
+features include: an embedded WireGuard tunnel that needs nothing installed alongside it,
+residential and datacentre exits told apart and filterable, a world map drawn on the CPU
+with no GPU and no map tiles, an acrylic frame with Snap Layouts on Windows, and a
+notification area icon that keeps the tunnel up while the window is away.
+ValiraVPN accounts are managed on the official site [valiravpn.com](https://valiravpn.com).
 
-A WireGuard client that brings its own tunnel.
+![ValiraVPN application image](docs/screenshot.png)
 
-[![Rust](https://img.shields.io/badge/Rust-2024%20edition-CE422B?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
-[![Slint](https://img.shields.io/badge/Slint-1.17-2379F4?style=flat-square)](https://slint.dev)
-[![WireGuard](https://img.shields.io/badge/WireGuard-boringtun-88171A?style=flat-square&logo=wireguard&logoColor=white)](https://www.wireguard.com)
-[![rustls](https://img.shields.io/badge/TLS-rustls%20%2B%20ring-4B32C3?style=flat-square)](https://github.com/rustls/rustls)
+* [About this Repo](#about-this-repo)
+* [Installation](#installation)
+  * [Requirements](#requirements)
+  * [Compilation](#compilation)
+* [Configuration](#configuration)
+* [Versioning](#versioning)
+* [Security](#security)
+* [License](#license)
+* [Acknowledgements](#acknowledgements)
 
-[![Windows](https://img.shields.io/badge/Windows-10%2B-0078D4?style=flat-square&logo=windows&logoColor=white)](#windows)
-[![Linux](https://img.shields.io/badge/Linux-X11%20%7C%20Wayland-FCC624?style=flat-square&logo=linux&logoColor=black)](#linux)
-[![macOS](https://img.shields.io/badge/macOS-supported-000000?style=flat-square&logo=apple&logoColor=white)](#macos)
+<a name="about-this-repo"></a>
+## About this Repo
 
-![The client on Windows: the exit list beside the world map, its acrylic backdrop letting the desktop through](docs/screenshot.png)
+The desktop client, written in Rust with [Slint](https://slint.dev) for the interface.
 
-</div>
+    ui/            design tokens, widget vocabulary, the three screens
+    src/api.rs     the control plane at valiravpn.com
+    src/tunnel/    two backends behind one interface
+    src/worldmap/  coastline vectors rasterised on the CPU
+    installer/     Inno Setup script for the Windows installer
 
+How the tunnel, the exit list and the map work, and the measurements behind those
+decisions, are in [docs/design.md](docs/design.md).
 
-Account and subscription live at [valiravpn.com](https://valiravpn.com); this is
-the client that connects to them. The WireGuard private key is generated on the
-machine and never leaves it. Only its public half travels, when signing in
-creates the device.
+<a name="installation"></a>
+## Installation
 
-## Highlights
+Windows binaries are published with each release. Take the installer from the
+[latest release](https://github.com/ValiraVPN/valiravpn-desktop/releases/latest); a
+SHA-256 checksum is published beside it. Linux and macOS are built from source.
 
-- **Nothing to install alongside it.** `boringtun` carries the protocol and
-  `tun-rs` owns the device, so the client is its own WireGuard. Where WireGuard
-  for Windows is already present it is used instead, for its kernel data path.
-- **The relay is pinned off the tunnel,** so encrypted packets cannot be routed
-  back into the tunnel that produced them. That is what otherwise breaks the
-  VPN the moment Internet Connection Sharing turns IP forwarding on.
-- **A world map drawn on the CPU** from coastline vectors. No GPU required, and
-  no tiles fetched from anywhere.
-- **Residential and datacentre exits told apart** on the service's authority,
-  filterable in both the list and the map.
-- **A frame of its own on Windows:** acrylic backdrop, Snap Layouts, and a
-  notification-area icon that keeps the tunnel up while the window is away.
+<a name="requirements"></a>
+### Requirements
 
-## Install
+**Windows.** Nothing. WireGuard for Windows is used when present and the embedded tunnel
+takes over when it is not. `wintun.dll` ships beside the executable.
 
-Windows: take the installer from the
-[latest release](https://github.com/ValiraVPN/valiravpn-desktop/releases/latest).
-A SHA-256 checksum sits beside it.
-
-Linux and macOS: build from source for now.
-
-## Layout
-
-    ui/theme.slint    design tokens: colour, the 44px grid, type scale
-    ui/components/    title bar, caption buttons, world map, widget vocabulary
-    ui/app.slint      the three screens and the responsive split
-    src/lib.rs        everything that is not the window, and where tests live
-    src/main.rs       the window, and the wiring between it and the library
-    src/api.rs        talks to valiravpn.com
-    src/flags.rs      country flags, sliced from an embedded atlas
-    src/geo.rs        puts a node on the map
-    src/keys.rs       WireGuard key generation, x25519
-    src/store.rs      session persistence in the platform config directory
-    src/tunnel/       the two backends behind one interface
-    src/tunnel/embedded/  the WireGuard this process carries itself
-    src/win32_frame.rs  custom title bar over the native Windows frame
-    vendor/wintun/    the signed Wintun DLLs, shipped beside the executable
-    vendor/flag-icons/  licence for the flag set the atlas is built from
-    windows/          the elevation manifest and the application icon
-
-## Building
-
-    cargo build --release
-    cargo test
-
-### Windows
-
-Nothing to install. WireGuard for Windows is used when present. Set
-`VALIRA_WIREGUARD` if it is not at the default location. The embedded
-tunnel takes over when it is not. `wintun.dll` ships beside the executable and
-has to stay there.
-
-The executable asks for administrator rights through an embedded manifest, so
-`cargo run` fails with `ERROR_ELEVATION_REQUIRED` from an ordinary shell. Build
-and test are unaffected. Run it from an elevated terminal, or:
-
-    Start-Process .\target\debug\valira-desktop.exe -Verb RunAs
-
-An installer is built from `installer/valira.iss` with Inno Setup 6.
-
-### Linux
-
-Build dependencies:
+**Linux.** Build dependencies:
 
     build-essential pkg-config libfontconfig-dev
     libxkbcommon-dev libxkbcommon-x11-dev
@@ -97,64 +57,78 @@ Build dependencies:
     libx11-dev libxcursor-dev libxrandr-dev libxi-dev
     libgl1-mesa-dev libegl1-mesa-dev
 
-`libxkbcommon-x11` must also be present at run time, or the client exits before
-drawing anything. `wireguard-tools` is used when present and not required
-otherwise. Run with `sudo`: creating a tunnel interface is privileged.
+`libxkbcommon-x11` is also needed at run time, without which the client exits before
+drawing anything. See [BUILDING-LINUX.md](BUILDING-LINUX.md) for what is not implemented
+there yet.
 
-There is no tray icon yet, so the close button closes the client. See
-[BUILDING-LINUX.md](BUILDING-LINUX.md) for what else is still missing there.
+**macOS.** `wireguard-tools` from Homebrew is used when present, and is not required.
 
-### macOS
+<a name="compilation"></a>
+### Compilation
 
-`wireguard-tools` from Homebrew is used when present and not required otherwise.
-Run with `sudo`.
+    cargo build --release
+    cargo test --lib
 
-## Settings
+The Windows installer is built from `installer/valira.iss` with Inno Setup 6.
+
+The executable carries a manifest asking for administrator rights, so `cargo run` is
+refused from an ordinary shell with `ERROR_ELEVATION_REQUIRED`. Build and test are not
+affected. Run it from an elevated terminal, or:
+
+    Start-Process .\target\release\valira-desktop.exe -Verb RunAs
+
+On Linux and macOS, run it with `sudo`: creating a tunnel interface is privileged.
+
+<a name="configuration"></a>
+## Configuration
 
     VALIRA_API             control plane, defaults to https://valiravpn.com
     VALIRA_WIREGUARD       path to wireguard.exe, Windows only
-    VALIRA_TUNNEL          pins the backend: embedded or system. Without it the
-                           choice is automatic, which also means the embedded
-                           path is never taken on a machine that has WireGuard
+    VALIRA_TUNNEL          pins the backend: embedded or system
     VALIRA_RENDERER        pins the renderer: software or gpu
     VALIRA_TUNNEL_TRACE    per-packet timings, written to the temp directory
-    VALIRA_UI_PREVIEW      opens one screen with sample data and no account:
-                           signin, choosing, connected or menu
+    VALIRA_UI_PREVIEW      opens one screen with sample data and no account
 
-## State
-
-Kept in the platform configuration directory, restricted to the current user:
+The session is kept in the platform configuration directory, readable only by the
+current user. It holds the account number, the token and the device private key.
+Signing out removes it and revokes the device.
 
     Linux    ~/.config/valira/session.json
     macOS    ~/Library/Application Support/com.ValiraVPN.valira/session.json
     Windows  %APPDATA%\ValiraVPN\valira\config\session.json
 
-It holds the account number, the token, and the device's private key. Signing
-out removes it and revokes the device on the server.
+<a name="versioning"></a>
+## Versioning
 
-## Design notes
+[Semantic Versioning](https://semver.org). Pushing a `vX.Y.Z` tag builds the Windows
+installer and publishes a release. The tag is checked against `Cargo.toml` first, so an
+installer can never advertise a version its executable does not carry.
 
-How the tunnel, the exit list and the map actually work, and the measurements
-behind the decisions: [docs/design.md](docs/design.md).
+<a name="security"></a>
+## Security
 
-## Third-party
+The WireGuard private key is generated on the machine and never leaves it. Only its
+public half travels, when signing in creates the device.
 
-- **Wintun**, WireGuard LLC, `vendor/wintun/LICENSE.txt`. Redistributed as that
-  licence allows, alongside software using only its documented API.
-- **flag-icons**, MIT, `vendor/flag-icons/LICENSE`. The flag atlas is built
-  from it.
-- **Natural Earth**, public domain. The coastline vectors come from it.
-- **Inter**, SIL Open Font License 1.1.
-- **Slint**, used under the Slint Royalty-free Desktop, Mobile, and Web
-  Applications License, not under its GPL option. That licence asks for
-  attribution in one of two places: an About screen inside the application, or
-  the public page its binaries are downloaded from.
+Report a vulnerability privately to [contact@grasandco.com](mailto:contact@grasandco.com)
+rather than through a public issue.
 
-## Licence
+<a name="license"></a>
+## License
 
-PolyForm Noncommercial 1.0.0, in [LICENSE.md](LICENSE.md). Anyone may read, run,
-modify and share this source for any purpose that is not commercial. Commercial
-use is reserved to ValiraVPN.
+PolyForm Noncommercial 1.0.0, in [LICENSE.md](LICENSE.md). Anyone may read, run, modify
+and share this source for any purpose that is not commercial. Commercial use is reserved
+to ValiraVPN. This is a source-available licence rather than an open source one, since it
+restricts the field of use.
 
-This is a source-available licence rather than an open source one: it restricts
-the field of use, which the Open Source Definition does not permit.
+<a name="acknowledgements"></a>
+## Acknowledgements
+
+* [Slint](https://slint.dev), used under its Royalty-free Desktop, Mobile, and Web
+  Applications License. That licence asks for attribution in one of two places: an About
+  screen inside the application, or the public page its binaries are downloaded from.
+* [boringtun](https://github.com/cloudflare/boringtun), BSD-3-Clause
+* [Wintun](https://www.wintun.net), WireGuard LLC, `vendor/wintun/LICENSE.txt`
+* [flag-icons](https://github.com/lipis/flag-icons), MIT
+* [Natural Earth](https://www.naturalearthdata.com), public domain
+* [Inter](https://rsms.me/inter), SIL Open Font License 1.1
