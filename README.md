@@ -2,6 +2,14 @@
 
 [![CI](https://github.com/ValiraVPN/valiravpn-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/ValiraVPN/valiravpn-desktop/actions/workflows/ci.yml)
 [![Release](https://github.com/ValiraVPN/valiravpn-desktop/actions/workflows/release.yml/badge.svg)](https://github.com/ValiraVPN/valiravpn-desktop/actions/workflows/release.yml)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue?style=flat-square)](LICENSE.md)
+
+[![Rust](https://img.shields.io/badge/Rust-2024%20edition-CE422B?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![Slint](https://img.shields.io/badge/Slint-1.17-2379F4?style=flat-square)](https://slint.dev)
+[![WireGuard](https://img.shields.io/badge/WireGuard-boringtun-88171A?style=flat-square&logo=wireguard&logoColor=white)](https://www.wireguard.com)
+[![rustls](https://img.shields.io/badge/TLS-rustls%20%2B%20ring-4B32C3?style=flat-square)](https://github.com/rustls/rustls)
+[![Windows](https://img.shields.io/badge/Windows-10%2B-0078D4?style=flat-square&logo=windows&logoColor=white)](#requirements)
+[![Linux](https://img.shields.io/badge/Linux-X11%20%7C%20Wayland-FCC624?style=flat-square&logo=linux&logoColor=black)](#requirements)
 
 **ValiraVPN for Desktop** is the official ValiraVPN app for desktop platforms. Some of the
 features include: an embedded WireGuard tunnel that needs nothing installed alongside it,
