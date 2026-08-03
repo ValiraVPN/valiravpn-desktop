@@ -1,14 +1,19 @@
 name: Release
 
-# Tagging is what publishes. `v1.2.3` on main, and the installer follows.
+# Tagging is what starts a release. The release is created as a draft and left
+# that way: the binaries are attached to it automatically, publishing it is a
+# deliberate act by a person.
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
-  # Kept for a dry run: builds and uploads the artefact, publishes nothing.
+  # Builds the installer and uploads it as an artefact, creating no release.
+  # How to rehearse the whole path.
   workflow_dispatch:
 
 permissions:
   contents: write
+  id-token: write      # signing the build provenance
+  attestations: write  # recording it
 
 concurrency:
   group: release-${{ github.ref }}
@@ -18,30 +23,50 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  create-release:
+    name: Create the draft release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version from the tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # A tag that disagrees with the manifest would ship an installer
+      # advertising a version its executable does not carry. Caught here rather
+      # than discovered by whoever downloads it.
+      - name: Check the tag against Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          manifest=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          echo "manifest $manifest, tag ${{ steps.version.outputs.version }}"
+          test "$manifest" = "${{ steps.version.outputs.version }}" \
+            || { echo "Cargo.toml says $manifest but the tag says ${{ steps.version.outputs.version }}"; exit 1; }
+
+      - name: Create the draft release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --verify-tag \
+            --title "ValiraVPN Desktop $GITHUB_REF_NAME" \
+            --generate-notes
+
   windows:
     name: Windows installer
+    needs: create-release
     runs-on: windows-latest
-
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
-
-      # A tag that disagrees with the manifest would ship an installer
-      # advertising a version the executable does not carry. Caught here rather
-      # than discovered by whoever downloads it.
-      - name: Check the tag against Cargo.toml
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: pwsh
-        run: |
-          $manifest = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
-          $tag = "${{ github.ref_name }}".TrimStart('v')
-          Write-Host "manifest $manifest, tag $tag"
-          if ($manifest -ne $tag) {
-            throw "Cargo.toml says $manifest but the tag says $tag"
-          }
 
       - name: Build
         run: cargo build --release --locked
@@ -55,9 +80,7 @@ jobs:
         shell: pwsh
         run: |
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) {
-            choco install innosetup --no-progress -y
-          }
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
           "ISCC=$iscc" >> $env:GITHUB_ENV
 
       - name: Build the installer
@@ -66,33 +89,38 @@ jobs:
           & "$env:ISCC" installer\valira.iss
 
       # The installer takes its version from the executable's own resources, so
-      # the file name is found rather than assumed.
+      # the file is found rather than assumed.
       - name: Checksum
         shell: pwsh
         run: |
           $setup = Get-ChildItem installer\out\*-setup.exe | Select-Object -First 1
           if (-not $setup) { throw "no installer was produced" }
           $hash = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLower()
-          "$hash  $($setup.Name)" | Out-File "$($setup.FullName).sha256" -Encoding ascii -NoNewline
+          "$hash  $($setup.Name)" | Out-File "$($setup.FullName).sha256" -Encoding ascii
           Write-Host "$($setup.Name)  $hash"
           "SETUP=$($setup.FullName)" >> $env:GITHUB_ENV
+          "SETUP_NAME=$($setup.Name)" >> $env:GITHUB_ENV
 
-      - name: Upload the build artefacts
+      # Says, verifiably, that this binary came out of this workflow at this
+      # commit. For a VPN client the provenance of the download is the point.
+      - name: Attest the build provenance
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ env.SETUP }}
+
+      - name: Upload the artefact
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
           path: installer/out/*
           if-no-files-found: error
 
-      # Only on a tag. A manual run stops at the artefact above.
-      - name: Publish the release
+      # Attached to the draft. Nothing is published here: a person does that.
+      - name: Attach to the draft release
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" `
-            "$env:SETUP" "$env:SETUP.sha256" `
-            --title "ValiraVPN Desktop ${{ github.ref_name }}" `
-            --generate-notes `
-            --verify-tag
+          gh release upload "$env:GITHUB_REF_NAME" "$env:SETUP" "$env:SETUP.sha256" --clobber

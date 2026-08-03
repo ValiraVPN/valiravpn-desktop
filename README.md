@@ -110,9 +110,13 @@ Signing out removes it and revokes the device.
 <a name="versioning"></a>
 ## Versioning
 
-[Semantic Versioning](https://semver.org). Pushing a `vX.Y.Z` tag builds the Windows
-installer and publishes a release. The tag is checked against `Cargo.toml` first, so an
-installer can never advertise a version its executable does not carry.
+[Semantic Versioning](https://semver.org). Pushing a `vX.Y.Z` tag creates a **draft**
+release, builds the Windows installer and attaches it with a SHA-256 checksum and a
+signed build provenance attestation. Publishing the draft is a deliberate act by a
+person; nothing reaches users on a tag alone.
+
+The tag is checked against `Cargo.toml` before anything is built, so an installer can
+never advertise a version its executable does not carry.
 
 <a name="contributing"></a>
 ## Contributing
