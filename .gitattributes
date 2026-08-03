@@ -1,0 +1,12 @@
+# One line ending in the repository, whatever the machine that wrote it. Without
+# this, every file committed from Windows arrives with CRLF and diffs against
+# the same file edited on Linux become unreadable.
+* text=auto eol=lf
+
+# Binary payloads, never to be touched by line ending conversion.
+*.png binary
+*.ico binary
+*.ttf binary
+*.dll binary
+*.bin binary
+*.idx binary
