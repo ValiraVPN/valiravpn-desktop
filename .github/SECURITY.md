@@ -3,7 +3,7 @@
 ## Reporting a security vulnerability to ValiraVPN
 
 If you believe you have found a security vulnerability, **DO NOT CREATE AN ISSUE**.
-Instead, please send an email to contact@grasandco.com, or file a report directly on
+Instead, please send an email to security@grasandco.com, or file a report directly on
 GitHub with [private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability).
 Reports are treated with the highest priority and in confidence.
 
