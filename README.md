@@ -15,15 +15,16 @@ A WireGuard client that brings its own tunnel.
 [![Linux](https://img.shields.io/badge/Linux-X11%20%7C%20Wayland-FCC624?style=flat-square&logo=linux&logoColor=black)](#linux)
 [![macOS](https://img.shields.io/badge/macOS-supported-000000?style=flat-square&logo=apple&logoColor=white)](#macos)
 
+[![Made with Slint](https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png)](https://slint.dev)
+
 ![The client on Windows: the exit list beside the world map, its acrylic backdrop letting the desktop through](docs/screenshot.png)
 
 </div>
 
----
 
 Account and subscription live at [valiravpn.com](https://valiravpn.com); this is
 the client that connects to them. The WireGuard private key is generated on the
-machine and never leaves it — only its public half travels, when signing in
+machine and never leaves it. Only its public half travels, when signing in
 creates the device.
 
 ## Highlights
@@ -32,7 +33,7 @@ creates the device.
   `tun-rs` owns the device, so the client is its own WireGuard. Where WireGuard
   for Windows is already present it is used instead, for its kernel data path.
 - **The relay is pinned off the tunnel,** so encrypted packets cannot be routed
-  back into the tunnel that produced them — which is what otherwise breaks the
+  back into the tunnel that produced them. That is what otherwise breaks the
   VPN the moment Internet Connection Sharing turns IP forwarding on.
 - **A world map drawn on the CPU** from coastline vectors. No GPU required, and
   no tiles fetched from anywhere.
@@ -75,8 +76,8 @@ Linux and macOS: build from source for now.
 
 ### Windows
 
-Nothing to install. WireGuard for Windows is used when present — set
-`VALIRA_WIREGUARD` if it is not at the default location — and the embedded
+Nothing to install. WireGuard for Windows is used when present. Set
+`VALIRA_WIREGUARD` if it is not at the default location. The embedded
 tunnel takes over when it is not. `wintun.dll` ships beside the executable and
 has to stay there.
 
@@ -84,7 +85,7 @@ The executable asks for administrator rights through an embedded manifest, so
 `cargo run` fails with `ERROR_ELEVATION_REQUIRED` from an ordinary shell. Build
 and test are unaffected. Run it from an elevated terminal, or:
 
-    Start-Process .	arget\debugalira-desktop.exe -Verb RunAs
+    Start-Process .\target\debug\valira-desktop.exe -Verb RunAs
 
 An installer is built from `installer/valira.iss` with Inno Setup 6.
 
@@ -102,7 +103,7 @@ Build dependencies:
 drawing anything. `wireguard-tools` is used when present and not required
 otherwise. Run with `sudo`: creating a tunnel interface is privileged.
 
-There is no tray icon yet, so the close button closes the client — see
+There is no tray icon yet, so the close button closes the client. See
 [BUILDING-LINUX.md](BUILDING-LINUX.md) for what else is still missing there.
 
 ### macOS
@@ -140,9 +141,21 @@ behind the decisions: [docs/design.md](docs/design.md).
 
 ## Third-party
 
-- **Wintun** — WireGuard LLC, `vendor/wintun/LICENSE.txt`. Redistributed as that
+- **Wintun**, WireGuard LLC, `vendor/wintun/LICENSE.txt`. Redistributed as that
   licence allows, alongside software using only its documented API.
-- **flag-icons** — MIT, `vendor/flag-icons/LICENSE`. The flag atlas is built
+- **flag-icons**, MIT, `vendor/flag-icons/LICENSE`. The flag atlas is built
   from it.
-- **Natural Earth** — public domain. The coastline vectors come from it.
-- **Inter** — SIL Open Font License 1.1.
+- **Natural Earth**, public domain. The coastline vectors come from it.
+- **Inter**, SIL Open Font License 1.1.
+- **Slint**, used under the Slint Royalty-free Desktop, Mobile, and Web
+  Applications License, not under its GPL option. That licence asks for the
+  attribution badge shown above.
+
+## Licence
+
+PolyForm Noncommercial 1.0.0, in [LICENSE.md](LICENSE.md). Anyone may read, run,
+modify and share this source for any purpose that is not commercial. Commercial
+use is reserved to ValiraVPN.
+
+This is a source-available licence rather than an open source one: it restricts
+the field of use, which the Open Source Definition does not permit.
