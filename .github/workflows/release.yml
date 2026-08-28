@@ -110,7 +110,7 @@ jobs:
           subject-path: ${{ env.SETUP }}
 
       - name: Upload the artefact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-installer
           path: installer/out/*
